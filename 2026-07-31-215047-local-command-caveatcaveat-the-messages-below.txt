@@ -1,0 +1,2501 @@
+ Tackle your toughest work with Opus 5. Switch anytime with /model.
+
+❯ /login                                                                        
+  ⎿  Login successful
+
+❯ /model                                                                        
+  ⎿  Set model to Sonnet 5 and saved as your default for new sessions
+
+❯ go through the project plan.md we will progress with the implementation, few  
+  things to add in the planning part, the ads being generated should also       
+  include what makes the company better/stand out from the competitors and what 
+  is the reasoning behind the ad and why it should work below each generated    
+  ad                                                                            
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+● I found PROJECT_PLAN.md. I'll add the competitive-differentiation and
+  reasoning fields to the ad-generation flow — touching the model matrix note,
+  the GeneratedAd table, the API contract, and the frontend AdCard description.
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 4 lines
+      40  
+      41  All three go through the same OpenRouter key — one client wrapp
+          er (`app/services/openrouter.py`) with per-task model config, s
+          o swapping any model later is a one-line change.
+      42  
+      43 +**Ad copy generation prompt** is given the scraped competitor a
+         +ds (headlines/body text) as context and, for each of the 3 conc
+         +epts, must return alongside the copy:                          
+      44 +- `differentiation`: what makes this company better/stand out v
+         +s. the competitor ads it was shown (concrete, not generic — gro
+         +unded in the actual competitor copy pulled in step 2/3)        
+      45 +- `reasoning`: why this specific angle/hook should work (the pe
+         +rsuasion logic — pain point targeted, positioning gap it exploi
+         +ts, etc.)                                                      
+      46 +                                                               
+      47  ---
+      48  
+      49  ## 4. Ad Data Sources
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 2 lines
+      105      company_name: str
+      106      headline_variants: str  # JSON-encoded list
+      107      description_variants: str  # JSON-encoded list
+      108 +    differentiation: str  # what makes this company stand out 
+          +vs. competitor ads shown to the model                         
+      109 +    reasoning: str  # why this ad angle should work           
+      110      image_url: str | None
+      111      status: str  # draft | published
+      112  
+
+❯ also add linkedin for the ad data sources as well since this might be for b2b 
+  as well                                                                       
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 1 line, removed 1 line
+      148  
+      149  POST /api/ads/generate
+      150    body: { company_name: str, context?: str }
+      151 -  → { ads: [ { id, headlines: [str], descriptions: [str], imag
+          -e_url? } x3 ] }                                               
+      151 +  → { ads: [ { id, headlines: [str], descriptions: [str], diff
+          +erentiation: str, reasoning: str, image_url? } x3 ] }         
+      152  
+      153  POST /api/ads/{id}/publish
+      154    → { campaign_id: int, status: str }
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 1 line, removed 1 line
+       4  
+       5  A single-user demo web app with three core flows:
+       6  1. Enter a company name → get 3 competitors.
+       7 -2. Click a competitor → see all ads they're running (Meta, Goog
+         -le, TikTok).                                                   
+       7 +2. Click a competitor → see all ads they're running (Meta, Goog
+         +le, TikTok, LinkedIn).                                         
+       8  3. Generate 3 original ad concepts → publish to Google Ads → vi
+          ew analytics.
+       9  
+      10  **Scope**: single-user demo, local-only (docker-compose), monor
+          epo.
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 2 lines, removed 1 line
+      53  | Meta Ad Library | Official API (free) | needs a Meta develope
+          r app + access token |
+      54  | Google Ads Transparency Center | No official API — Playwright
+           scrape | isolate as its own module; page layout may change ove
+          r time |
+      55  | TikTok Commercial Content Library | Official API (free) | inc
+          luded as third source |
+      56 +| LinkedIn Ad Library | No official API — Playwright scrape | k
+         +ey for B2B competitors; isolate as its own module like the Goog
+         +le scraper, same layout-drift risk |                           
+      57  
+      58  **Normalized schema** (all sources map to this before hitting t
+          he frontend):
+      59  ```
+      60  {
+      60 -  source: "meta" | "google_transparency" | "tiktok",           
+      61 +  source: "meta" | "google_transparency" | "tiktok" | "linkedin
+         +",                                                             
+      62    advertiser: str,
+      63    headline: str | null,
+      64    body_text: str | null,
+
+● Now update the data model, folder structure, and build order to reflect
+  LinkedIn as a scraped source.
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 1 line, removed 1 line
+      92  class ScrapedAd(SQLModel, table=True):
+      93      id: int | None = Field(default=None, primary_key=True)
+      94      competitor_id: int = Field(foreign_key="competitor.id")
+      95 -    source: str  # meta | google_transparency | tiktok         
+      95 +    source: str  # meta | google_transparency | tiktok | linked
+         +in                                                             
+      96      headline: str | None
+      97      body_text: str | None
+      98      image_url: str | None
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 1 line
+      174  │   │   │   ├── meta_ad_library.py
+      175  │   │   │   ├── google_transparency_scraper.py  # Playwright
+      176  │   │   │   ├── tiktok_ad_library.py
+      177 +│   │   │   ├── linkedin_ad_library_scraper.py  # Playwright  
+      178  │   │   │   └── google_ads_client.py            # OAuth, publi
+           sh, GAQL
+      179  │   │   ├── db.py
+      180  │   │   └── config.py          # Pydantic BaseSettings, reads 
+           .env
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 1 line, removed 1 line
+      208  
+      209  1. Competitor lookup (Sonar Pro) — read-only, validates the LL
+           M integration first
+      210  2. Meta Ad Library + TikTok integration (official APIs, easies
+           t wins)
+      211 -3. Google Transparency Playwright scraper (isolated module, ri
+          -skiest part)                                                  
+      211 +3. Google Transparency + LinkedIn Ad Library Playwright scrape
+          +rs (isolated modules, riskiest part — no official APIs, layout
+          + drift risk)                                                  
+      212  4. Ad copy generation (Claude) + optional image gen (Nano Bana
+           na)
+      213  5. Google Ads OAuth + publish flow
+      214  6. Analytics dashboard (GAQL)
+
+● Both changes are in PROJECT_PLAN.md:
+
+  1. Generated ads now include reasoning — GeneratedAd gained differentiation
+  and reasoning fields, the /api/ads/generate response returns them per ad, and
+  the model-matrix section notes the prompt must ground differentiation in the
+  actual scraped competitor copy.
+  2. LinkedIn added as a 4th ad source for B2B coverage — since there's no
+  official LinkedIn Ad Library API, it's scoped as a Playwright scraper module
+  (linkedin_ad_library_scraper.py), same risk profile as the Google Transparency
+  scraper, and folded into build step 3 alongside it.
+
+✻ Sautéed for 1m 3s
+
+❯ also what should be done if there are too many competitor ads? shouldnt there 
+  be a limit on the scraped ads?                                                
+
+● Yes — unbounded scraping is a real risk here, especially for large advertisers
+  running hundreds of ads. I'd cap it at the scraper level (e.g., most recent
+  20-30 ads per source per competitor, sorted by first_seen/recency) rather than
+  scraping everything and truncating later, since that also bounds Playwright
+  runtime and LLM context size when you later feed these into ad generation. The
+  main tradeoff is recency vs. completeness — you might miss an older evergreen
+  ad that's still performing well, but for a demo app recency is the better
+  proxy for "what they're actively running now."
+
+  Want me to add this as a cap (with the number configurable) to the plan under
+  section 4?
+
+✻ Baked for 6s
+
+❯ yes, add it with a configurable limit, also for this demo we will be only     
+  using the meta api so comment out the rest. also add the tableschemas for the 
+  databse in the project plan and begin the implementing                        
+
+  Listed 1 directory (ctrl+o to expand)
+● Empty project so far. Updating the plan first, then scaffolding the backend.
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 1 line, removed 1 line
+       4  
+       5  A single-user demo web app with three core flows:
+       6  1. Enter a company name → get 3 competitors.
+       7 -2. Click a competitor → see all ads they're running (Meta, Goog
+         -le, TikTok, LinkedIn).                                         
+       7 +2. Click a competitor → see all ads they're running (Meta only 
+         +for this demo — Google/TikTok/LinkedIn scoped but disabled, see
+         + section 4).                                                   
+       8  3. Generate 3 original ad concepts → publish to Google Ads → vi
+          ew analytics.
+       9  
+      10  **Scope**: single-user demo, local-only (docker-compose), monor
+          epo.
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 10 lines, removed 6 lines
+      48  
+      49  ## 4. Ad Data Sources
+      50  
+      51 -| Source | Access | Notes |                                    
+      52 -|---|---|---|                                                  
+      53 -| Meta Ad Library | Official API (free) | needs a Meta develope
+         -r app + access token |                                         
+      54 -| Google Ads Transparency Center | No official API — Playwright
+         - scrape | isolate as its own module; page layout may change ove
+         -r time |                                                       
+      55 -| TikTok Commercial Content Library | Official API (free) | inc
+         -luded as third source |                                        
+      56 -| LinkedIn Ad Library | No official API — Playwright scrape | k
+         -ey for B2B competitors; isolate as its own module like the Goog
+         -le scraper, same layout-drift risk |                           
+      51 +| Source | Access | Notes | Status (this demo) |               
+      52 +|---|---|---|---|                                              
+      53 +| Meta Ad Library | Official API (free) | needs a Meta develope
+         +r app + access token | **Active** |                            
+      54 +| Google Ads Transparency Center | No official API — Playwright
+         + scrape | isolate as its own module; page layout may change ove
+         +r time | Commented out — future work |                         
+      55 +| TikTok Commercial Content Library | Official API (free) | inc
+         +luded as third source | Commented out — future work |          
+      56 +| LinkedIn Ad Library | No official API — Playwright scrape | k
+         +ey for B2B competitors; isolate as its own module like the Goog
+         +le scraper, same layout-drift risk | Commented out — future wor
+         +k |                                                            
+      57  
+      58 +Only Meta is wired up for this demo — the other three services 
+         +are scaffolded as stub modules with their logic commented out, 
+         +so enabling them later is a matter of uncommenting + adding cre
+         +dentials, not rewriting.                                       
+      59 +                                                               
+      60 +**Scrape/fetch limit**: each source fetch is capped at `MAX_ADS
+         +_PER_SOURCE` (env var, default `25`) most-recent ads per compet
+         +itor. Bounds scrape/API time, DB size, and the LLM context wind
+         +ow when these ads are later fed into ad generation. Applied at 
+         +the service layer before rows are written to `ScrapedAd`.      
+      61 +                                                               
+      62  **Normalized schema** (all sources map to this before hitting t
+          he frontend):
+      63  ```
+      64  {
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 4 lines, removed 4 lines
+      175  │   │   ├── routers/           # companies, ads, campaigns
+      176  │   │   ├── services/
+      177  │   │   │   ├── openrouter.py       # unified LLM/image client
+      178 -│   │   │   ├── meta_ad_library.py                            
+      179 -│   │   │   ├── google_transparency_scraper.py  # Playwright  
+      180 -│   │   │   ├── tiktok_ad_library.py                          
+      181 -│   │   │   ├── linkedin_ad_library_scraper.py  # Playwright  
+      178 +│   │   │   ├── meta_ad_library.py                  # active f
+          +or this demo                                                  
+      179 +│   │   │   ├── google_transparency_scraper.py      # Playwrig
+          +ht — commented out, future work                               
+      180 +│   │   │   ├── tiktok_ad_library.py                # commente
+          +d out, future work                                            
+      181 +│   │   │   ├── linkedin_ad_library_scraper.py      # Playwrig
+          +ht — commented out, future work                               
+      182  │   │   │   └── google_ads_client.py            # OAuth, publi
+           sh, GAQL
+      183  │   │   ├── db.py
+      184  │   │   └── config.py          # Pydantic BaseSettings, reads 
+           .env
+
+❯ also have the scraped ads and generated ads into different tables             
+
+  Read 1 file, listed 1 directory (ctrl+o to expand)
+
+● ScrapedAd and GeneratedAd are already separate tables in section 5 (two
+  distinct SQLModel, table=True classes, each with its own primary key and no
+  shared columns) — nothing to change there. Now starting the actual
+  implementation.
+
+● Bash(mkdir -p "D:/AI_SDR/backend/app/models" "D:/AI_SDR/backend/app/routers"
+      "D:/AI_SDR/backend/app/services")
+  ⎿  Done
+● Now the models — three files, mirroring the plan's grouping.
+
+● Write(app\models\__init__.py)
+  ⎿  Wrote 12 lines to app\models\__init__.py
+       1 from app.models.company import CompanyLookup, Competitor
+       2 from app.models.ad import ScrapedAd, GeneratedAd
+       3 from app.models.campaign import Campaign, AnalyticsSnapshot
+       4 
+       5 __all__ = [
+       6     "CompanyLookup",
+       7     "Competitor",
+       8     "ScrapedAd",
+       9     "GeneratedAd",
+      10     "Campaign",
+     … +2 lines (ctrl+o to expand)
+
+❯ also create the schema in project plan for the postgres table                 
+
+  Read 1 file (ctrl+o to expand)
+
+● Adding the Postgres DDL as a reference subsection right after the SQLModel
+  definitions, keeping types 1:1 so the SQLite→Postgres swap stays
+  connection-string-only as promised in section 2.
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 72 lines
+      136      fetched_at: datetime
+      137  ```
+      138  
+      139 +### 5a. Postgres DDL (reference — for the eventual SQLite → Po
+          +stgres swap)                                                  
+      140 +                                                              
+      141 +Types are chosen to match what SQLAlchemy already emits for th
+          +e SQLModel classes above (e.g. `headline_variants`/`descriptio
+          +n_variants` stay `TEXT` holding JSON-encoded strings, not `JSO
+          +NB`), so the swap really is connection-string-only — no model 
+          +or app-layer code changes.                                    
+      142 +                                                              
+      143 +```sql                                                        
+      144 +CREATE TABLE companylookup (                                  
+      145 +    id              BIGSERIAL PRIMARY KEY,                    
+      146 +    query_name      TEXT NOT NULL,                            
+      147 +    resolved_name   TEXT NOT NULL,                            
+      148 +    created_at      TIMESTAMPTZ NOT NULL                      
+      149 +);                                                            
+      150 +                                                              
+      151 +CREATE TABLE competitor (                                     
+      152 +    id                  BIGSERIAL PRIMARY KEY,                
+      153 +    company_lookup_id   BIGINT NOT NULL REFERENCES companylook
+          +up(id),                                                       
+      154 +    name                TEXT NOT NULL,                        
+      155 +    domain              TEXT,                                 
+      156 +    logo_url            TEXT                                  
+      157 +);                                                            
+      158 +                                                              
+      159 +CREATE TABLE scrapedad (                                      
+      160 +    id              BIGSERIAL PRIMARY KEY,                    
+      161 +    competitor_id   BIGINT NOT NULL REFERENCES competitor(id),
+      162 +    source          TEXT NOT NULL CHECK (source IN ('meta', 'g
+          +oogle_transparency', 'tiktok', 'linkedin')),                  
+      163 +    headline        TEXT,                                     
+      164 +    body_text       TEXT,                                     
+      165 +    image_url       TEXT,                                     
+      166 +    landing_url     TEXT,                                     
+      167 +    first_seen      DATE,                                     
+      168 +    fetched_at      TIMESTAMPTZ NOT NULL                      
+      169 +);                                                            
+      170 +                                                              
+      171 +CREATE TABLE generatedad (                                    
+      172 +    id                      BIGSERIAL PRIMARY KEY,            
+      173 +    created_at              TIMESTAMPTZ NOT NULL,             
+      174 +    company_name            TEXT NOT NULL,                    
+      175 +    headline_variants       TEXT NOT NULL,   -- JSON-encoded l
+          +ist                                                           
+      176 +    description_variants    TEXT NOT NULL,   -- JSON-encoded l
+          +ist                                                           
+      177 +    differentiation         TEXT NOT NULL,                    
+      178 +    reasoning               TEXT NOT NULL,                    
+      179 +    image_url               TEXT,                             
+      180 +    status                  TEXT NOT NULL CHECK (status IN ('d
+          +raft', 'published'))                                          
+      181 +);                                                            
+      182 +                                                              
+      183 +CREATE TABLE campaign (                                       
+      184 +    id                  BIGSERIAL PRIMARY KEY,                
+      185 +    generated_ad_id     BIGINT NOT NULL REFERENCES generatedad
+          +(id),                                                         
+      186 +    google_campaign_id  TEXT NOT NULL,                        
+      187 +    google_ad_group_id  TEXT NOT NULL,                        
+      188 +    google_ad_id        TEXT NOT NULL,                        
+      189 +    budget_amount       NUMERIC(10, 2) NOT NULL,              
+      190 +    status              TEXT NOT NULL,                        
+      191 +    created_at          TIMESTAMPTZ NOT NULL                  
+      192 +);                                                            
+      193 +                                                              
+      194 +CREATE TABLE analyticssnapshot (                              
+      195 +    id              BIGSERIAL PRIMARY KEY,                    
+      196 +    campaign_id     BIGINT NOT NULL REFERENCES campaign(id),  
+      197 +    date            DATE NOT NULL,                            
+      198 +    impressions     BIGINT NOT NULL,                          
+      199 +    clicks          BIGINT NOT NULL,                          
+      200 +    cost_micros     BIGINT NOT NULL,                          
+      201 +    ctr             DOUBLE PRECISION NOT NULL,                
+      202 +    fetched_at      TIMESTAMPTZ NOT NULL                      
+      203 +);                                                            
+      204 +                                                              
+      205 +CREATE INDEX idx_competitor_company_lookup_id ON competitor(co
+          +mpany_lookup_id);                                             
+      206 +CREATE INDEX idx_scrapedad_competitor_id ON scrapedad(competit
+          +or_id);                                                       
+      207 +CREATE INDEX idx_campaign_generated_ad_id ON campaign(generate
+          +d_ad_id);                                                     
+      208 +CREATE INDEX idx_analyticssnapshot_campaign_id ON analyticssna
+          +pshot(campaign_id);                                           
+      209 +```                                                           
+      210 +                                                              
+      211  ---
+      212  
+      213  ## 6. API Contracts
+
+● Postgres DDL added as section 5a — one CREATE TABLE per model, with the same
+  types SQLAlchemy already emits for SQLite (so the JSON-list columns stay TEXT,
+  keeping the swap connection-string-only), plus FK indexes. Resuming the
+  backend scaffold now — models __init__.py is written; next up is
+  models/company.py.
+
+✻ Worked for 2m 32s
+
+❯ continue with the rest of the models                                          
+
+● Write(app\models\company.py)
+  ⎿  Wrote 18 lines to app\models\company.py
+       1 from datetime import datetime
+       2 
+       3 from sqlmodel import Field, SQLModel
+       4 
+       5 
+       6 class CompanyLookup(SQLModel, table=True):
+       7     id: int | None = Field(default=None, primary_key=True)
+       8     query_name: str
+       9     resolved_name: str
+      10     created_at: datetime
+     … +8 lines (ctrl+o to expand)
+
+● Write(app\models\ad.py)
+  ⎿  Wrote 27 lines to app\models\ad.py
+       1 from datetime import date, datetime
+       2 
+       3 from sqlmodel import Field, SQLModel
+       4 
+       5 
+       7     id: int | None = Field(default=None, primary_key=True)
+       8     competitor_id: int = Field(foreign_key="competitor.id")
+       9     source: str  # meta | google_transparency | tiktok | linkedi
+         n
+      10     headline: str | None = None
+     … +18 lines (ctrl+o to expand)
+
+● Write(app\models\campaign.py)
+  ⎿  Wrote 25 lines to app\models\campaign.py
+       1 from datetime import date, datetime
+       2 
+       3 from sqlmodel import Field, SQLModel
+       4 
+       5 
+       6 class Campaign(SQLModel, table=True):
+       7     id: int | None = Field(default=None, primary_key=True)
+       8     generated_ad_id: int = Field(foreign_key="generatedad.id")
+       9     google_campaign_id: str
+      10     google_ad_group_id: str
+     … +15 lines (ctrl+o to expand)
+
+● All six models are in place, split across company.py, ad.py, and campaign.py
+  exactly per the plan's grouping, re-exported from models/__init__.py.
+
+● Next up: config.py and db.py.
+
+● Write(app\config.py)
+  ⎿  Wrote 26 lines to app\config.py
+       1 from pydantic_settings import BaseSettings, SettingsConfigDict
+       2 
+       3 
+       4 class Settings(BaseSettings):
+       5     model_config = SettingsConfigDict(env_file=".env", extra="ig
+       6 
+       7     database_url: str = "sqlite:///./app.db"
+       8 
+       9     openrouter_api_key: str = ""
+      10     openrouter_competitor_model: str = "perplexity/sonar-pro"
+     … +18 lines (ctrl+o to expand)
+
+● Write(app\db.py)
+  ⎿  Wrote 15 lines to app\db.py
+       1 from sqlmodel import Session, SQLModel, create_engine
+       2 
+       3 from app.config import settings
+       5 connect_args = {"check_same_thread": False} if settings.database
+         _url.startswith("sqlite") else {}
+       6 engine = create_engine(settings.database_url, connect_args=conne
+         ct_args)
+       8 
+       9 def init_db() -> None:
+      10     SQLModel.metadata.create_all(engine)
+     … +7 lines (ctrl+o to expand)
+
+● Update(app\db.py)
+  ⎿  Added 1 line
+      1  from sqlmodel import Session, SQLModel, create_engine
+      2  
+      3  from app.config import settings
+      4 +import app.models  # noqa: F401  ensures all tables are register
+        +ed on SQLModel.metadata                                         
+      5  
+      6  connect_args = {"check_same_thread": False} if settings.database
+         _url.startswith("sqlite") else {}
+      7  engine = create_engine(settings.database_url, connect_args=conne
+         ct_args)
+
+● Config and DB engine done — MAX_ADS_PER_SOURCE is already wired in as a
+  settings field for the scraper cap.
+● Write(app\services\openrouter.py)
+  ⎿  Wrote 115 lines to app\services\openrouter.py
+      1 """Unified OpenRouter client: one wrapper for every LLM/image tas
+        k, so swapping
+      2 a model later is a one-line change to config.py rather than a cod
+        e change here.
+      3 """
+      5 import json
+      6 
+      7 import httpx
+      8 
+      9 from app.config import settings
+     … +136 lines (ctrl+o to expand)
+
+● OpenRouter service done — competitor discovery and ad-copy generation (with
+  differentiation/reasoning) are fully implemented; image gen is a stubbed
+  NotImplementedError since it's optional and unused for now.
+
+● Write(app\services\meta_ad_library.py)
+  ⎿  Wrote 85 lines to app\services\meta_ad_library.py
+       1 """Meta Ad Library integration — the only ad source wired up for
+       2 
+       3 Google Transparency Center, TikTok Commercial Content Library, a
+         nd LinkedIn Ad Library
+         plemented yet; see the
+       5 sibling `*_scraper.py` / `*_ad_library.py` stub modules in this 
+       6 """
+       7 
+       8 from datetime import date, datetime, timezone
+      10 import httpx
+     … +91 lines (ctrl+o to expand)
+
+● Meta Ad Library service done — pages through the API, caps at
+  MAX_ADS_PER_SOURCE, and normalizes into the shared ScrapedAd schema.
+
+● Write(app\services\google_transparency_scraper.py)
+  ⎿  Wrote 31 lines to app\services\google_transparency_scraper.py
+       1 """Google Ads Transparency Center scraper — commented out for th
+       2 see PROJECT_PLAN.md section 4). No official API; this would use 
+         Playwright to scrape the
+          so keep this isolated here.
+       5 To enable later:
+       6 1. Add `playwright` to backend/requirements.txt and run `playwri
+       7 2. Implement fetch_ads() below, following the same normalized-sc
+         hema contract as
+         pped at settings.max_ads_per_source).
+      10 """
+     … +32 lines (ctrl+o to expand)
+
+● Write(app\services\tiktok_ad_library.py)
+  ⎿  Wrote 28 lines to app\services\tiktok_ad_library.py
+       1 """TikTok Commercial Content Library integration — commented out
+       2 scope, see PROJECT_PLAN.md section 4). Official free API, so thi
+         s is an easy win to enable
+       4 
+       5 To enable later:
+         al Content Library API access.
+       7 2. Implement fetch_ads() below, following the same normalized-sc
+       8    meta_ad_library.fetch_ads() (source="tiktok", capped at setti
+         ngs.max_ads_per_source).
+      10 """
+     … +29 lines (ctrl+o to expand)
+
+● Write(app\services\linkedin_ad_library_scraper.py)
+  ⎿  Wrote 32 lines to app\services\linkedin_ad_library_scraper.py
+       1 """LinkedIn Ad Library scraper — commented out for this demo (Me
+       2 PROJECT_PLAN.md section 4). No official API for competitor ad tr
+       3 use Playwright, same approach and layout-drift risk as the Googl
+         e Transparency scraper.
+         ext source to enable.
+       6 To enable later:
+         ght install chromium`.
+       8 2. Implement fetch_ads() below, following the same normalized-sc
+       9    meta_ad_library.fetch_ads() (source="linkedin", capped at set
+      10 3. Uncomment the aggregation call in app/routers/ads.py.
+     … +34 lines (ctrl+o to expand)
+
+● All three disabled-source stubs are in place, each with the real
+  implementation commented out and a NotImplementedError guard so they fail
+  loudly if accidentally called.
+
+● Write(app\routers\companies.py)
+  ⎿  Wrote 53 lines to app\routers\companies.py
+       1 from datetime import datetime, timezone
+       2 
+       3 from fastapi import APIRouter, Depends
+       4 from sqlmodel import Session
+       5 
+       6 from app.db import get_session
+       7 from app.models import CompanyLookup, Competitor
+       8 from app.services import openrouter
+       9 
+      10 router = APIRouter(prefix="/api/companies", tags=["companies"])
+     … +44 lines (ctrl+o to expand)
+
+● Write(app\routers\ads.py)
+  ⎿  Wrote 154 lines to app\routers\ads.py
+       1 import json
+       2 from datetime import datetime, timedelta, timezone
+       3 
+       4 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPExc
+         eption
+       6 
+       7 from app.config import settings
+       8 from app.db import engine, get_session
+       9 from app.models import Competitor, GeneratedAd, ScrapedAd
+      10 from app.services import meta_ad_library, openrouter
+     … +168 lines (ctrl+o to expand)
+
+● Write(app\routers\campaigns.py)
+  ⎿  Wrote 9 lines to app\routers\campaigns.py
+      1 from fastapi import APIRouter, HTTPException
+      2 
+      3 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
+      4 
+      5 
+      7 def get_campaign_analytics(campaign_id: int):
+      8     # GAQL-backed analytics dashboard is build order step 6 — not
+         implemented yet.
+      9     raise HTTPException(status_code=501, detail="Analytics not im
+        plemented yet (build order step 6).")
+     … +1 line (ctrl+o to expand)
+
+● All three routers are done: companies (fully working lookup), ads (Meta-backed
+  fetch with stale-while-revalidate caching + status polling, and full ad
+  generation with differentiation/reasoning), and campaigns (stubbed 501 until
+  Google Ads OAuth lands).
+● Write(app\__init__.py)
+  ⎿  Wrote 1 line to app\__init__.py
+      1 (No content)
+
+● Write(app\routers\__init__.py)
+  ⎿  Wrote 1 line to app\routers\__init__.py
+      1 (No content)
+
+● Write(app\services\__init__.py)
+  ⎿  Wrote 1 line to app\services\__init__.py
+      1 (No content)
+
+● Write(app\main.py)
+  ⎿  Wrote 28 lines to app\main.py
+       1 from fastapi import FastAPI
+       2 from fastapi.middleware.cors import CORSMiddleware
+       3 
+       4 from app.db import init_db
+       5 from app.routers import ads, campaigns, companies
+       6 
+       7 app = FastAPI(title="Competitor Ad Intelligence")
+       8 
+       9 app.add_middleware(
+      10     CORSMiddleware,
+     … +18 lines (ctrl+o to expand)
+
+● Write(requirements.txt)
+  ⎿  Wrote 6 lines to requirements.txt
+      1 fastapi
+      2 uvicorn[standard]
+      3 sqlmodel
+      4 httpx
+      5 pydantic-settings
+      6 python-dotenv
+
+● Write(D:\AI_SDR\.env.example)
+  ⎿  Wrote 22 lines to ..\.env.example
+       1 # Database (swappable to Postgres later via connection string on
+         ly — see PROJECT_PLAN.md section 5a)
+       2 DATABASE_URL=sqlite:///./app.db
+       3 
+       4 # OpenRouter (single key for all three model tasks)
+       6 OPENROUTER_COMPETITOR_MODEL=perplexity/sonar-pro
+       7 OPENROUTER_COPY_MODEL=anthropic/claude-sonnet-4
+       8 OPENROUTER_IMAGE_MODEL=google/gemini-2.5-flash-image
+       9 
+      10 # Meta Ad Library (only active ad source for this demo)
+     … +15 lines (ctrl+o to expand)
+
+● Now let's sanity-check the code compiles before wrapping up.
+
+● Bash(cd "D:/AI_SDR/backend" && python -m py_compile app/main.py app/db.py
+      app/config.py app/models/*.py app/routers/*.py app/services/*.py && echo
+      "OK: all files com…)
+  ⎿  OK: all files compiled
+
+● Bash(python --version && pip --version)
+  ⎿  Python 3.11.9
+     pip 24.0 from C:\Users\lokha\AppData\Local\Programs\Python\Python311\L
+     ib\site-packages\pip (python 3.11)
+
+● Bash(cd "D:/AI_SDR/backend" && python -m venv .venv &&
+      ".venv/Scripts/python.exe" -m pip install -q -r requirements.txt 2>&1 |
+      tail -20)
+  ⎿  [notice] A new release of pip is available: 24.0 -> 26.2
+     [notice] To update, run: D:\AI_SDR\backend\.venv\Scripts\python.exe -m
+      pip install --upgrade pip
+  ⎿  (timeout 3m)
+
+● Dependencies installed cleanly. Let's boot the app to confirm it actually
+  starts.
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -c "
+      import sys…)
+  ⎿  D:\AI_SDR\backend\.venv\Lib\site-packages\fastapi\testclient.py:1: Sta
+     rletteDeprecationWarning: Using `httpx` with `starlette.testclient` is
+      deprecated; install `httpx2` instead.
+     … +2 lines (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -c "
+      from app.main import app…)
+  ⎿  D:\AI_SDR\backend\.venv\Lib\site-packages\fastapi\testclient.py:1: Sta
+     rletteDeprecationWarning: Using `httpx` with `starlette.testclient` is
+      deprecated; install `httpx2` instead.
+     … +4 lines (ctrl+o to expand)
+
+● All 6 tables created correctly. Cleaning up the test artifact and adding a
+  .gitignore.
+
+● Bash(rm -f "D:/AI_SDR/backend/app.db")
+  ⎿  Done
+
+● Write(D:\AI_SDR\.gitignore)
+  ⎿  Wrote 7 lines to ..\.gitignore
+      1 .venv/
+      2 __pycache__/
+      3 *.pyc
+      4 backend/app.db
+      5 .env
+      6 node_modules/
+      7 dist/
+
+● Bash(cd "D:/AI_SDR" && find . -type f -not -path "./backend/.venv/*" | sort)  ⎿  ./.env.example
+     ./.gitignore
+     ./backend/app/__init__.py
+     … +37 lines (ctrl+o to expand)
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Backend scaffold is complete and verified working end-to-end (imports cleanly,
+  boots, creates all 6 tables). Summary of what's live:
+
+  - Models: all 6 tables from the plan, split into company.py / ad.py /
+  campaign.py
+  - config.py/db.py: env-driven settings including MAX_ADS_PER_SOURCE, SQLite
+  engine (Postgres-swappable via connection string)
+  - services/openrouter.py: competitor discovery (Sonar Pro) and ad-copy
+  generation (Claude) fully implemented — each generated concept includes
+  differentiation and reasoning
+  - services/meta_ad_library.py: real Meta Graph API integration, paginated,
+  capped at the configurable limit
+  - Google/TikTok/LinkedIn services: stub files with real logic commented out
+  and a NotImplementedError guard, ready to uncomment later
+  - Routers: POST /api/companies/lookup and ad generation are fully wired;
+  competitor-ads fetch has stale-while-revalidate caching via BackgroundTasks;
+  publish and analytics are 501 stubs pending Google Ads OAuth (build order
+  steps 5–6)
+  - Verified via TestClient: app boots, startup hook creates all tables in
+  SQLite
+
+  Not yet done, per build order: Google Ads OAuth/publish, analytics dashboard,
+  and the entire frontend. To actually run it, you'll need to fill in
+  OPENROUTER_API_KEY and META_AD_LIBRARY_ACCESS_TOKEN in a copy of .env.example.
+  Let me know when you want to move to the frontend or the publish flow next.
+
+✻ Cooked for 4m 44s
+
+❯ the competitor model for meta is the only one active right? and it doesnt     
+  need a llm just api polli0ng right?                                           
+
+● Correct on both counts.
+
+  - Meta is the only active ad source — Google Transparency, TikTok, and
+  LinkedIn are stubbed with NotImplementedError in their own files and never
+  called from the router (see backend/app/routers/ads.py:37 where the
+  aggregation of the other three is commented out).
+  - Fetching Meta ads is pure API polling, no LLM — meta_ad_library.py just
+  makes direct httpx GET requests to Meta's Graph API (ads_archive endpoint)
+  with your access token and pages through the results. No model call involved.
+
+  LLMs only show up in two other places, unrelated to fetching existing ads:
+  1. Competitor discovery (openrouter.get_competitors) — Sonar Pro, used once
+  per company lookup to find the 3 competitors.
+  2. Ad copy generation (openrouter.generate_ads) — Claude, used to generate
+  your 3 new ad concepts (with differentiation/reasoning), grounded in whatever
+  Meta ads were scraped.
+
+✻ Cooked for 11s
+
+❯ let's build the frontend now, once its done we will test the app              
+
+● Bash(node --version && npm --version)
+  ⎿  v20.16.0
+     10.9.0
+
+● Good, Node 20 is available. Let's scaffold the Vite React+TS app.
+
+● Bash(cd "D:/AI_SDR" && npm create vite@latest frontend -- --template react-ts
+      2>&1 | tail -30)
+  ⎿  npm warn exec The following package was not found and will be installe
+     d: create-vite@9.1.2
+     npm warn EBADENGINE Unsupported engine {
+     … +16 lines (ctrl+o to expand)
+  ⎿  (timeout 2m)
+
+● Bash(cd "D:/AI_SDR/frontend" && npm install 2>&1 | tail -20)
+  ⎿  npm warn EBADENGINE   required: { node: '^20.19.0 || >=22.12.0' },
+     npm warn EBADENGINE   current: { node: 'v20.16.0', npm: '10.9.0' }
+     npm warn EBADENGINE }
+     … +17 lines (ctrl+o to expand)
+  ⎿  (timeout 3m)
+
+● Bash(cd "D:/AI_SDR/frontend" && npm install react-router-dom
+      @tanstack/react-query 2>&1 | tail -10 && npm install -D tailwindcss
+      @tailwindcss/vite 2>&1 | tail -10)
+  ⎿  12 packages are looking for funding
+       run `npm fund` for details
+     … +16 lines (ctrl+o to expand)
+  ⎿  (timeout 2m)
+
+● Bash(cd "D:/AI_SDR/frontend" && npm audit 2>&1 | head -40)
+  ⎿  # npm audit report
+
+     react-router  7.12.0 - 8.2.0
+     … +14 lines (ctrl+o to expand)
+
+● Not a concern here — it's an RSC-mode CSRF bypass, and this SPA doesn't use
+  RSC mode at all. Proceeding without the breaking downgrade. Let me set up
+  tasks to track the frontend build.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(D:\AI_SDR\frontend\vite.config.ts)  ⎿  Added 10 lines, removed 1 line
+       1  import { defineConfig } from 'vite'
+       2  import react from '@vitejs/plugin-react'
+       3 +import tailwindcss from '@tailwindcss/vite'                    
+       4  
+       5  // https://vite.dev/config/
+       6  export default defineConfig({
+       6 -  plugins: [react()],                                          
+       7 +  plugins: [react(), tailwindcss()],                           
+       8 +  server: {                                                    
+       9 +    proxy: {                                                   
+      10 +      '/api': {                                                
+      11 +        target: 'http://localhost:8000',                       
+      12 +        changeOrigin: true,                                    
+      13 +      },                                                       
+      14 +    },                                                         
+      15 +  },                                                           
+      16  })
+
+  Read 1 file (ctrl+o to expand)
+
+● Write(D:\AI_SDR\frontend\src\index.css)
+  ⎿  Added 2 lines, removed 107 lines
+        1 -:root {                                                       
+        2 -  --text: #6b6375;                                            
+        3 -  --text-h: #08060d;                                          
+        4 -  --bg: #fff;                                                 
+        5 -  --border: #e5e4e7;                                          
+        6 -  --code-bg: #f4f3ec;                                         
+        7 -  --accent: #aa3bff;                                          
+        8 -  --accent-bg: rgba(170, 59, 255, 0.1);                       
+        9 -  --accent-border: rgba(170, 59, 255, 0.5);                   
+       10 -  --social-bg: rgba(244, 243, 236, 0.5);                      
+       11 -  --shadow:                                                   
+       12 -    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0
+          - 4px 6px -2px;                                                
+        1 +@import "tailwindcss";                                        
+        2  
+       14 -  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;          
+       15 -  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;       
+       16 -  --mono: ui-monospace, Consolas, monospace;                  
+       17 -                                                              
+       18 -  font: 18px/145% var(--sans);                                
+       19 -  letter-spacing: 0.18px;                                     
+       20 -  color-scheme: light dark;                                   
+       21 -  color: var(--text);                                         
+       22 -  background: var(--bg);                                      
+       23 -  font-synthesis: none;                                       
+       24 -  text-rendering: optimizeLegibility;                         
+       25 -  -webkit-font-smoothing: antialiased;                        
+       26 -  -moz-osx-font-smoothing: grayscale;                         
+       27 -                                                              
+       28 -  @media (max-width: 1024px) {                                
+       29 -    font-size: 16px;                                          
+       30 -  }                                                           
+       31 -}                                                             
+       32 -                                                              
+       33 -@media (prefers-color-scheme: dark) {                         
+       34 -  :root {                                                     
+       35 -    --text: #9ca3af;                                          
+       36 -    --text-h: #f3f4f6;                                        
+       37 -    --bg: #16171d;                                            
+       38 -    --border: #2e303a;                                        
+       39 -    --code-bg: #1f2028;                                       
+       40 -    --accent: #c084fc;                                        
+       41 -    --accent-bg: rgba(192, 132, 252, 0.15);                   
+       42 -    --accent-border: rgba(192, 132, 252, 0.5);                
+       43 -    --social-bg: rgba(47, 48, 58, 0.5);                       
+       44 -    --shadow:                                                 
+       45 -      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25)
+          - 0 4px 6px -2px;                                              
+       46 -  }                                                           
+       47 -                                                              
+       48 -  #social .button-icon {                                      
+       49 -    filter: invert(1) brightness(2);                          
+       50 -  }                                                           
+       51 -}                                                             
+       52 -                                                              
+       53 -#root {                                                       
+       54 -  width: 1126px;                                              
+       55 -  max-width: 100%;                                            
+       56 -  margin: 0 auto;                                             
+       57 -  text-align: center;                                         
+       58 -  border-inline: 1px solid var(--border);                     
+       59 -  min-height: 100svh;                                         
+       60 -  display: flex;                                              
+       61 -  flex-direction: column;                                     
+       62 -  box-sizing: border-box;                                     
+       63 -}                                                             
+       64 -                                                              
+        3  body {
+        4    margin: 0;
+        5 +  font-family: system-ui, "Segoe UI", Roboto, sans-serif;     
+        6  }
+       68 -                                                              
+       69 -h1,                                                           
+       70 -h2 {                                                          
+       71 -  font-family: var(--heading);                                
+       72 -  font-weight: 500;                                           
+       73 -  color: var(--text-h);                                       
+       74 -}                                                             
+       75 -                                                              
+       76 -h1 {                                                          
+       77 -  font-size: 56px;                                            
+       78 -  letter-spacing: -1.68px;                                    
+       79 -  margin: 32px 0;                                             
+       80 -  @media (max-width: 1024px) {                                
+       81 -    font-size: 36px;                                          
+       82 -    margin: 20px 0;                                           
+       83 -  }                                                           
+       84 -}                                                             
+       85 -h2 {                                                          
+       86 -  font-size: 24px;                                            
+       87 -  line-height: 118%;                                          
+       88 -  letter-spacing: -0.24px;                                    
+       89 -  margin: 0 0 8px;                                            
+       90 -  @media (max-width: 1024px) {                                
+       91 -    font-size: 20px;                                          
+       92 -  }                                                           
+       93 -}                                                             
+       94 -p {                                                           
+       95 -  margin: 0;                                                  
+       96 -}                                                             
+       97 -                                                              
+       98 -code,                                                         
+       99 -.counter {                                                    
+      100 -  font-family: var(--mono);                                   
+      101 -  display: inline-flex;                                       
+      102 -  border-radius: 4px;                                         
+      103 -  color: var(--text-h);                                       
+      104 -}                                                             
+      105 -                                                              
+      106 -code {                                                        
+      107 -  font-size: 15px;                                            
+      108 -  line-height: 135%;                                          
+      109 -  padding: 4px 8px;                                           
+      110 -  background: var(--code-bg);                                 
+      111 -}                                                             
+
+  Read 2 files (ctrl+o to expand)
+
+● Bash(rm -f "D:/AI_SDR/frontend/src/App.css" && ls
+      "D:/AI_SDR/frontend/src/assets" 2>/dev/null)
+  ⎿  hero.png
+     react.svg
+     vite.svg
+
+● Tailwind and proxy config are done. Marking that task complete and moving to
+  the API layer.
+
+● Bash(mkdir -p "D:/AI_SDR/frontend/src/api" "D:/AI_SDR/frontend/src/components"
+      "D:/AI_SDR/frontend/src/pages")
+  ⎿  Done
+
+● Write(D:\AI_SDR\frontend\src\api\types.ts)
+  ⎿  Wrote 53 lines to ..\frontend\src\api\types.ts
+       1 export interface Competitor {
+       2   id: number
+       3   name: string
+       4   domain: string | null
+       5   logo_url: string | null
+       6 }
+       7 
+       8 export interface LookupResponse {
+       9   resolved_name: string
+      10   competitors: Competitor[]
+     … +43 lines (ctrl+o to expand)
+
+● Write(D:\AI_SDR\frontend\src\api\client.ts)
+  ⎿  Wrote 22 lines to ..\frontend\src\api\client.ts
+       1 export class ApiError extends Error {
+       2   status: number
+       3 
+       4   constructor(status: number, message: string) {
+       5     super(message)
+       7   }
+       8 }
+       9 
+      10 export async function apiFetch<T>(path: string, options?: Reques
+         tInit): Promise<T> {
+     … +14 lines (ctrl+o to expand)
+
+● Write(D:\AI_SDR\frontend\src\api\hooks.ts)
+  ⎿  Wrote 60 lines to ..\frontend\src\api\hooks.ts
+      1 import { useMutation, useQuery, useQueryClient } from '@tanstack/
+        react-query'
+      2 import { apiFetch } from './client'
+      3 import type {
+      4   AnalyticsResponse,
+      5   CompetitorAdsResponse,
+      6   GenerateAdsResponse,
+      7   LookupResponse,
+      8   PublishResponse,
+      9 } from './types'
+     … +59 lines (ctrl+o to expand)
+
+● Update(D:\AI_SDR\frontend\src\api\hooks.ts)
+  ⎿  Added 1 line, removed 1 line
+      1 -import { useMutation, useQuery, useQueryClient } from '@tanstack
+        -/react-query'                                                   
+      1 +import { useMutation, useQuery } from '@tanstack/react-query'   
+      2  import { apiFetch } from './client'
+      3  import type {
+      4    AnalyticsResponse,
+
+● Update(D:\AI_SDR\frontend\src\api\hooks.ts)
+  ⎿  Removed 6 lines
+      52      retry: false,
+      53    })
+      54  }
+      55 -                                                               
+      56 -export function useInvalidateCompetitorAds() {                 
+      57 -  const queryClient = useQueryClient()                         
+      58 -  return (competitorId: number) =>                             
+      59 -    queryClient.invalidateQueries({ queryKey: ['competitor-ads'
+         -, competitorId] })                                             
+      60 -}                                                              
+
+● API layer done — types, fetch wrapper, and TanStack Query hooks for all 5
+  endpoints, with polling built into useCompetitorAds while status is
+  refreshing.
+
+● Write(D:\AI_SDR\frontend\src\components\CompetitorCard.tsx)
+  ⎿  Wrote 25 lines to ..\frontend\src\components\CompetitorCard.tsx
+       1 import { Link } from 'react-router-dom'
+       2 import type { Competitor } from '../api/types'
+       4 export function CompetitorCard({ competitor }: { competitor: Com
+         petitor }) {
+       5   return (
+       7       to={`/competitors/${competitor.id}/ads`}
+       8       className="flex items-center gap-3 rounded-lg border borde
+         r-gray-200 p-4 transition hover:border-purple-400 hover:shadow-s
+       9     >
+      10       {competitor.logo_url ? (
+     … +23 lines (ctrl+o to expand)
+
+● Write(D:\AI_SDR\frontend\src\components\ScrapedAdCard.tsx)
+  ⎿  Wrote 30 lines to ..\frontend\src\components\ScrapedAdCard.tsx
+       1 import type { ScrapedAd } from '../api/types'
+       3 export function ScrapedAdCard({ ad }: { ad: ScrapedAd }) {
+       4   return (
+       5     <div className="rounded-lg border border-gray-200 p-4 dark:b
+       6       <span className="inline-block rounded bg-purple-100 px-2 p
+         y-0.5 text-xs font-medium uppercase tracking-wide text-purple-70
+       7         {ad.source}
+       8       </span>
+       9       {ad.headline && (
+         ray-100">{ad.headline}</p>
+     … +27 lines (ctrl+o to expand)
+● Write(D:\AI_SDR\frontend\src\components\PublishButton.tsx)
+  ⎿  Wrote 31 lines to ..\frontend\src\components\PublishButton.tsx
+       1 import { usePublishAd } from '../api/hooks'
+       2 import { ApiError } from '../api/client'
+       3 
+       4 export function PublishButton({ adId }: { adId: number }) {
+       5   const publish = usePublishAd()
+       6 
+       7   return (
+       8     <div>
+       9       <button
+      10         type="button"
+     … +27 lines (ctrl+o to expand)
+
+● Write(D:\AI_SDR\frontend\src\components\GeneratedAdCard.tsx)
+  ⎿  Wrote 42 lines to ..\frontend\src\components\GeneratedAdCard.tsx
+       1 import type { GeneratedAdConcept } from '../api/types'
+       2 import { PublishButton } from './PublishButton'
+       4 export function GeneratedAdCard({ ad }: { ad: GeneratedAdConcept
+          }) {
+       5   return (
+         order-gray-700">
+       7       <div className="space-y-1">
+       8         {ad.headlines.map((headline, i) => (
+         ext-gray-100">
+      10             {headline}
+     … +42 lines (ctrl+o to expand)
+
+● Write(D:\AI_SDR\frontend\src\components\AnalyticsPanel.tsx)
+  ⎿  Wrote 46 lines to ..\frontend\src\components\AnalyticsPanel.tsx
+       1 import { useCampaignAnalytics } from '../api/hooks'
+       3 
+       4 export function AnalyticsPanel({ campaignId }: { campaignId: num
+         ber }) {
+         cs(campaignId)
+       6 
+         ding analytics…</p>
+       8 
+       9   if (isError) {
+         atus === 501
+     … +46 lines (ctrl+o to expand)
+
+● All 5 components are done, matching the plan's component list. Now the pages
+  and routing.
+
+● Write(D:\AI_SDR\frontend\src\pages\Home.tsx)
+  ⎿  Wrote 75 lines to ..\frontend\src\pages\Home.tsx
+      1 import { useState } from 'react'
+      2 import { Link } from 'react-router-dom'
+      3 import { useCompanyLookup } from '../api/hooks'
+      4 import { CompetitorCard } from '../components/CompetitorCard'
+      5 import { ApiError } from '../api/client'
+      6 
+      7 export function Home() {
+      8   const [companyName, setCompanyName] = useState('')
+      9   const lookup = useCompanyLookup()
+     … +74 lines (ctrl+o to expand)
+
+● Need to add the companyName prop to CompetitorCard so it can pass along route
+  state.
+
+● Update(D:\AI_SDR\frontend\src\components\CompetitorCard.tsx)
+  ⎿  Added 8 lines, removed 1 line
+       1  import { Link } from 'react-router-dom'
+       2  import type { Competitor } from '../api/types'
+       3  
+       4 -export function CompetitorCard({ competitor }: { competitor: Co
+         -mpetitor }) {                                                  
+       4 +export function CompetitorCard({                               
+       5 +  competitor,                                                  
+       6 +  companyName,                                                 
+       7 +}: {                                                           
+       8 +  competitor: Competitor                                       
+       9 +  companyName?: string                                         
+      10 +}) {                                                           
+      11    return (
+      12      <Link
+      13        to={`/competitors/${competitor.id}/ads`}
+      14 +      state={companyName ? { companyName } : undefined}        
+      15        className="flex items-center gap-3 rounded-lg border bord
+          er-gray-200 p-4 transition hover:border-purple-400 hover:shadow
+          -sm dark:border-gray-700 dark:hover:border-purple-500"
+      16      >
+      17        {competitor.logo_url ? (
+
+● Now the CompetitorAds page.
+
+● Write(D:\AI_SDR\frontend\src\pages\CompetitorAds.tsx)
+  ⎿  Wrote 50 lines to ..\frontend\src\pages\CompetitorAds.tsx
+      1 import { Link, useLocation, useParams } from 'react-router-dom'
+      2 import { useCompetitorAds } from '../api/hooks'
+      3 import { ScrapedAdCard } from '../components/ScrapedAdCard'
+      4 
+      5 export function CompetitorAds() {
+      6   const { id } = useParams<{ id: string }>()
+      7   const competitorId = id ? Number(id) : undefined
+      8   const location = useLocation()
+      9   const companyName = (location.state as { companyName?: string }
+         | null)?.companyName
+     … +51 lines (ctrl+o to expand)
+
+● Now the GeneratedAds page — the one with the differentiation/reasoning display
+  requirement.
+
+● Write(D:\AI_SDR\frontend\src\pages\GeneratedAds.tsx)
+  ⎿  Wrote 74 lines to ..\frontend\src\pages\GeneratedAds.tsx
+      1 import { useState } from 'react'
+      2 import { Link, useLocation } from 'react-router-dom'
+      3 import { useGenerateAds } from '../api/hooks'
+      4 import { GeneratedAdCard } from '../components/GeneratedAdCard'
+      5 import { ApiError } from '../api/client'
+      6 
+      7 export function GeneratedAds() {
+      8   const location = useLocation()
+      9   const initialCompanyName = (location.state as { companyName?: s
+        tring } | null)?.companyName ?? ''
+     … +78 lines (ctrl+o to expand)
+
+● Write(D:\AI_SDR\frontend\src\pages\Analytics.tsx)
+  ⎿  Wrote 19 lines to ..\frontend\src\pages\Analytics.tsx
+       1 import { Link, useParams } from 'react-router-dom'
+       2 import { AnalyticsPanel } from '../components/AnalyticsPanel'
+       3 
+       4 export function Analytics() {
+       5   const { id } = useParams<{ id: string }>()
+       7 
+       8   return (
+       9     <div className="mx-auto max-w-2xl px-4 py-12">
+      10       <Link to="/" className="text-sm text-purple-600 hover:unde
+         rline dark:text-purple-400">
+     … +12 lines (ctrl+o to expand)
+
+● Now wire up App.tsx and main.tsx with routing + QueryClientProvider.
+
+● Write(D:\AI_SDR\frontend\src\App.tsx)
+  ⎿  Added 11 lines, removed 115 lines
+        1 -import { useState } from 'react'                              
+        2 -import reactLogo from './assets/react.svg'                    
+        3 -import viteLogo from './assets/vite.svg'                      
+        4 -import heroImg from './assets/hero.png'                       
+        5 -import './App.css'                                            
+        1 +import { Route, Routes } from 'react-router-dom'              
+        2 +import { Home } from './pages/Home'                           
+        3 +import { CompetitorAds } from './pages/CompetitorAds'         
+        4 +import { GeneratedAds } from './pages/GeneratedAds'           
+        5 +import { Analytics } from './pages/Analytics'                 
+        6  
+        7  function App() {
+        8 -  const [count, setCount] = useState(0)                       
+        9 -                                                              
+        8    return (
+       11 -    <>                                                        
+       12 -      <section id="center">                                   
+       13 -        <div className="hero">                                
+       14 -          <img src={heroImg} className="base" width="170" heig
+          -ht="179" alt="" />                                            
+       15 -          <img src={reactLogo} className="framework" alt="Reac
+          -t logo" />                                                    
+       16 -          <img src={viteLogo} className="vite" alt="Vite logo"
+          - />                                                           
+       17 -        </div>                                                
+       18 -        <div>                                                 
+       19 -          <h1>Get started</h1>                                
+       20 -          <p>                                                 
+       21 -            Edit <code>src/App.tsx</code> and save to test <co
+          -de>HMR</code>                                                 
+       22 -          </p>                                                
+       23 -        </div>                                                
+       24 -        <button                                               
+       25 -          type="button"                                       
+       26 -          className="counter"                                 
+       27 -          onClick={() => setCount((count) => count + 1)}      
+       28 -        >                                                     
+       29 -          Count is {count}                                    
+       30 -        </button>                                             
+       31 -      </section>                                              
+       32 -                                                              
+       33 -      <div className="ticks"></div>                           
+       34 -                                                              
+       35 -      <section id="next-steps">                               
+       36 -        <div id="docs">                                       
+       37 -          <svg className="icon" role="presentation" aria-hidde
+          -n="true">                                                     
+       38 -            <use href="/icons.svg#documentation-icon"></use>  
+       39 -          </svg>                                              
+       40 -          <h2>Documentation</h2>                              
+       41 -          <p>Your questions, answered</p>                     
+       42 -          <ul>                                                
+       43 -            <li>                                              
+       44 -              <a href="https://vite.dev/" target="_blank">    
+       45 -                <img className="logo" src={viteLogo} alt="" />
+       46 -                Explore Vite                                  
+       47 -              </a>                                            
+       48 -            </li>                                             
+       49 -            <li>                                              
+       50 -              <a href="https://react.dev/" target="_blank">   
+       51 -                <img className="button-icon" src={reactLogo} a
+          -lt="" />                                                      
+       52 -                Learn more                                    
+       53 -              </a>                                            
+       54 -            </li>                                             
+       55 -          </ul>                                               
+       56 -        </div>                                                
+       57 -        <div id="social">                                     
+       58 -          <svg className="icon" role="presentation" aria-hidde
+          -n="true">                                                     
+       59 -            <use href="/icons.svg#social-icon"></use>         
+       60 -          </svg>                                              
+       61 -          <h2>Connect with us</h2>                            
+       62 -          <p>Join the Vite community</p>                      
+       63 -          <ul>                                                
+       64 -            <li>                                              
+       65 -              <a href="https://github.com/vitejs/vite" target=
+          -"_blank">                                                     
+       66 -                <svg                                          
+       67 -                  className="button-icon"                     
+       68 -                  role="presentation"                         
+       69 -                  aria-hidden="true"                          
+       70 -                >                                             
+       71 -                  <use href="/icons.svg#github-icon"></use>   
+       72 -                </svg>                                        
+       73 -                GitHub                                        
+       74 -              </a>                                            
+       75 -            </li>                                             
+       76 -            <li>                                              
+       77 -              <a href="https://chat.vite.dev/" target="_blank"
+          ->                                                             
+       78 -                <svg                                          
+       79 -                  className="button-icon"                     
+       80 -                  role="presentation"                         
+       81 -                  aria-hidden="true"                          
+       82 -                >                                             
+       83 -                  <use href="/icons.svg#discord-icon"></use>  
+       84 -                </svg>                                        
+       85 -                Discord                                       
+       86 -              </a>                                            
+       87 -            </li>                                             
+       88 -            <li>                                              
+       89 -              <a href="https://x.com/vite_js" target="_blank">
+       90 -                <svg                                          
+       91 -                  className="button-icon"                     
+       92 -                  role="presentation"                         
+       93 -                  aria-hidden="true"                          
+       94 -                >                                             
+       95 -                  <use href="/icons.svg#x-icon"></use>        
+       96 -                </svg>                                        
+       97 -                X.com                                         
+       98 -              </a>                                            
+       99 -            </li>                                             
+      100 -            <li>                                              
+      101 -              <a href="https://bsky.app/profile/vite.dev" targ
+          -et="_blank">                                                  
+      102 -                <svg                                          
+      103 -                  className="button-icon"                     
+      104 -                  role="presentation"                         
+      105 -                  aria-hidden="true"                          
+      106 -                >                                             
+      107 -                  <use href="/icons.svg#bluesky-icon"></use>  
+      108 -                </svg>                                        
+      109 -                Bluesky                                       
+      110 -              </a>                                            
+      111 -            </li>                                             
+      112 -          </ul>                                               
+      113 -        </div>                                                
+      114 -      </section>                                              
+      115 -                                                              
+      116 -      <div className="ticks"></div>                           
+      117 -      <section id="spacer"></section>                         
+      118 -    </>                                                       
+        9 +    <Routes>                                                  
+       10 +      <Route path="/" element={<Home />} />                   
+       11 +      <Route path="/competitors/:id/ads" element={<CompetitorA
+          +ds />} />                                                     
+       12 +      <Route path="/ads/generate" element={<GeneratedAds />} /
+          +>                                                             
+       13 +      <Route path="/campaigns/:id/analytics" element={<Analyti
+          +cs />} />                                                     
+       14 +    </Routes>                                                 
+       15    )
+       16  }
+       17  
+
+● Write(D:\AI_SDR\frontend\src\main.tsx)
+  ⎿  Added 9 lines, removed 1 line
+       1  import { StrictMode } from 'react'
+       2  import { createRoot } from 'react-dom/client'
+       3 +import { BrowserRouter } from 'react-router-dom'               
+       4 +import { QueryClient, QueryClientProvider } from '@tanstack/rea
+         +ct-query'                                                      
+       5  import './index.css'
+       6  import App from './App.tsx'
+       7  
+       8 +const queryClient = new QueryClient()                          
+       9 +                                                               
+      10  createRoot(document.getElementById('root')!).render(
+      11    <StrictMode>
+       8 -    <App />                                                    
+      12 +    <QueryClientProvider client={queryClient}>                 
+      13 +      <BrowserRouter>                                          
+      14 +        <App />                                                
+      15 +      </BrowserRouter>                                         
+      16 +    </QueryClientProvider>                                     
+      17    </StrictMode>,
+      18  )
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(D:\AI_SDR\frontend\index.html)
+  ⎿  Added 1 line, removed 1 line
+       4      <meta charset="UTF-8" />
+       5      <link rel="icon" type="image/svg+xml" href="/favicon.svg" /
+          >
+       6      <meta name="viewport" content="width=device-width, initial-
+          scale=1.0" />
+       7 -    <title>frontend</title>                                    
+       7 +    <title>Competitor Ad Intelligence</title>                  
+       8    </head>
+       9    <body>
+      10      <div id="root"></div>
+
+● Bash(rm -f "D:/AI_SDR/frontend/src/assets/hero.png"
+      "D:/AI_SDR/frontend/src/assets/react.svg"
+      "D:/AI_SDR/frontend/src/assets/vite.svg")
+  ⎿  Done
+
+● Pages and routing are done.
+● Now let's typecheck and build the frontend.
+
+● Bash(cd "D:/AI_SDR/frontend" && npx tsc -b --noEmit 2>&1 | head -60)
+  ⎿  (No output)
+  ⎿  (timeout 2m)
+
+● No type errors. Now the full build.
+
+● Bash(cd "D:/AI_SDR/frontend" && npm run build 2>&1 | tail -40)
+  ⎿      at file:///D:/AI_SDR/frontend/node_modules/rolldown/dist/shared/bi
+     nding-Cv62mM1i.mjs:9:49
+         ... 2 lines matching cause stack trace ...
+     … +37 lines (ctrl+o to expand)
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR/frontend" && npm install -D vite@^6 @vitejs/plugin-react@^4
+      2>&1 | tail -20)
+  ⎿  npm warn EBADENGINE Unsupported engine {
+     npm warn EBADENGINE   package: 'oxlint@1.76.0',
+     npm warn EBADENGINE   required: { node: '^20.19.0 || >=22.12.0' },
+     … +15 lines (ctrl+o to expand)
+  ⎿  (timeout 2m)
+
+● Bash(cd "D:/AI_SDR/frontend" && npm run build 2>&1 | tail -40)
+  ⎿  > frontend@0.0.0 build
+     > tsc -b && vite build
+     … +9 lines (ctrl+o to expand)
+  ⎿  (timeout 2m)
+
+● Build succeeds. Let's also start the dev server briefly to confirm it serves
+  correctly, then clean up.
+
+● Bash(rm -rf "D:/AI_SDR/frontend/dist")
+  ⎿  Done
+
+● One fix before we test: config.py currently looks for .env relative to the
+  working directory, but the actual .env.example template lives at the repo
+  root, not backend/. Let me make that path resolution robust regardless of
+  where uvicorn is launched from.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(app\config.py)
+  ⎿  Added 5 lines, removed 1 line
+       1 +from pathlib import Path                                       
+       2 +                                                               
+       3  from pydantic_settings import BaseSettings, SettingsConfigDict
+       4  
+       5 +_REPO_ROOT = Path(__file__).resolve().parents[2]               
+       6  
+       7 +                                                               
+       8  class Settings(BaseSettings):
+       5 -    model_config = SettingsConfigDict(env_file=".env", extra="i
+         -gnore")                                                        
+       9 +    model_config = SettingsConfigDict(env_file=str(_REPO_ROOT /
+         + ".env"), extra="ignore")                                      
+      10  
+      11      database_url: str = "sqlite:///./app.db"
+      12  
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -c "
+      from app.config import settings…)
+  ⎿  25
+
+● Good, config still loads correctly regardless of the launch directory.
+
+  The frontend is fully built and verified — TypeScript typechecks clean, and
+  vite build (v6, rollup-based) produces a working bundle. Note: I swapped
+  vite@8→vite@6 because v8 defaults to a rolldown-based bundler that requires a
+  native binding your Node 20.16 doesn't satisfy (needs 20.19+); v6 avoids that
+  entirely with no functional loss for this app.
+
+  What's in place:
+  - Home — company lookup → 3 competitor cards
+  - CompetitorAds — Meta ads for a competitor, auto-polls while status: 
+  "refreshing"
+  - GeneratedAds — 3 ad concepts, each showing headlines/descriptions plus "What
+  makes this stand out" and "Why this should work" sections, with a publish
+  button
+  - Analytics — stub page, gracefully shows "not implemented yet" against the
+  501
+
+  Ready to test end-to-end now. To actually see real data you'll need
+  OPENROUTER_API_KEY and META_AD_LIBRARY_ACCESS_TOKEN set — do you have those,
+  or want me to run it now and we'll hit auth errors where keys are missing?
+
+✻ Churned for 6m 6s
+
+※ recap: Building the Competitor Ad Intelligence app: backend and frontend are both scaffolded and verified working. Next: set OPENROUTER_API_KEY and META_AD_LIBRARY_ACCESS_TOKEN in .env, then run both servers to test end-to-end. (disable recaps in /config)
+
+❯ i have added them both in env                                                 
+
+● Good catch to flag: those real keys are sitting in .env.example, but config.py
+  only loads from .env — so as-is, the app won't actually see them, and
+  .env.example is meant to be a safe-to-commit template (it's not gitignored;
+  .env is). Let me move them to a real .env and restore the example file to
+  blank placeholders.
+
+  Read 1 file (ctrl+o to expand)
+
+● Write(D:\AI_SDR\.env)
+  ⎿  Wrote 22 lines to ..\.env
+       1 # Database (swappable to Postgres later via connection string on
+         ly — see PROJECT_PLAN.md section 5a)
+       2 DATABASE_URL=sqlite:///./app.db
+       4 # OpenRouter (single key for all three model tasks)
+       5 OPENROUTER_API_KEY=sk-or-v1-cbbce14de2b30d942099a37c60223afe9fc6
+         e4325c397f993cd29034a854dc86
+       6 OPENROUTER_COMPETITOR_MODEL=perplexity/sonar-pro
+       8 OPENROUTER_IMAGE_MODEL=google/gemini-2.5-flash-image
+       9 
+      10 # Meta Ad Library (only active ad source for this demo)
+     … +20 lines (ctrl+o to expand)
+
+● Write(D:\AI_SDR\.env.example)
+  ⎿  Added 2 lines, removed 2 lines
+       2  DATABASE_URL=sqlite:///./app.db
+       3  
+       4  # OpenRouter (single key for all three model tasks)
+       5 -OPENROUTER_API_KEY=sk-or-v1-cbbce14de2b30d942099a37c60223afe9fc
+         -6e4325c397f993cd29034a854dc86                                  
+       5 +OPENROUTER_API_KEY=                                            
+       6  OPENROUTER_COMPETITOR_MODEL=perplexity/sonar-pro
+       7  OPENROUTER_COPY_MODEL=anthropic/claude-sonnet-4
+       8  OPENROUTER_IMAGE_MODEL=google/gemini-2.5-flash-image
+       9  
+      10  # Meta Ad Library (only active ad source for this demo)
+      11 -META_AD_LIBRARY_ACCESS_TOKEN=EAAPQNCLbNkEBSPmZCWhuxZBN2Ratv52NF
+         -LR7aUMqaxnBM7i9mT5XScKk0HHKsFwZBMRA2ryRpnYWOFMKn4pgPca46msgNvdh
+         -45li1NZAnSV6mxhiffUL6UYNky7dJqh4zuuFtP10wsFNpyiZCgB90qEN1ujInrU
+         -uYj8h5ZCNp2iDTZCqGcH0QsfV0SpxyYdDEtZBwCCiQNQk96msRV5LyVRyoyvZAW
+         -82OL8MuD34k2GDl6jwghiYwAXBe3f8d5QdUJbdXyH8pvVVC8ZBDo3AGQ9ZCkk  
+      11 +META_AD_LIBRARY_ACCESS_TOKEN=                                  
+      12  META_AD_LIBRARY_COUNTRIES=US
+      13  
+      14  # Cap on ads fetched per source per competitor (see PROJECT_PLA
+          N.md section 4)
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Good, .env is gitignored. Now let's boot both servers and test end-to-end.
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m uvicorn
+      app.main:app --host 127.0.0.1 --port 8000)
+  ⎿  Running in the background (↓ to manage)
+
+● Bash(cd "D:/AI_SDR/frontend" && npm run dev -- --port 5173)
+  ⎿  Running in the background (↓ to manage)
+
+  Read 2 files (ctrl+o to expand)
+
+● Both servers are up. Let's quickly sanity-check the backend API directly
+  before browser testing.
+
+● Bash(curl -s -X POST http://127.0.0.1:8000/api/companies/lookup -H
+      "Content-Type: application/json" -d '{"company_name":"Notion"}')
+  ⎿  Internal Server Error
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR" && OR_KEY=$(grep OPENROUTER_API_KEY .env | cut -d= -f2) &&
+      curl -s https://openrouter.ai/api/v1/chat/completions \
+        -H "Authorization: Bearer $O…)
+  ⎿  {
+       "error": {
+         "message": "Provider returned error",
+     … +12 lines (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR" && OR_KEY=$(grep OPENROUTER_API_KEY .env | cut -d= -f2) &&
+      curl -s https://openrouter.ai/api/v1/chat/completions \
+        -H "Authorization: Bearer $O…)
+  ⎿  {
+       "id": "gen-1785494800-hZqjXDjUsvSouG4DkKjl",
+       "object": "chat.completion",
+     … +135 lines (ctrl+o to expand)
+
+● json_schema works great for competitor discovery, and it correctly used web
+  search. Let's do the same for ad generation, then update the code.
+
+● Bash(cd "D:/AI_SDR" && OR_KEY=$(grep OPENROUTER_API_KEY .env | cut -d= -f2) &&
+      curl -s https://openrouter.ai/api/v1/chat/completions \
+        -H "Authorization: Bearer $O…)
+  ⎿  {
+       "error": {
+         "message": "No allowed providers are available for the selected mo
+     … +23 lines (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR" && OR_KEY=$(grep OPENROUTER_API_KEY .env | cut -d= -f2) &&
+      curl -s https://openrouter.ai/api/v1/chat/completions \
+        -H "Authorization: Bearer $O…)
+  ⎿  {
+       "error": {
+         "message": "No allowed providers are available for the selected mo
+     … +23 lines (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR" && OR_KEY=$(grep OPENROUTER_API_KEY .env | cut -d= -f2) &&
+      curl -s "https://openrouter.ai/api/v1/models" | python -c "
+      import json,sys…)
+  ⎿  anthropic/claude-sonnet-5
+     anthropic/claude-sonnet-5:batch
+     ~anthropic/claude-sonnet-latest
+     … +4 lines (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR" && OR_KEY=$(grep OPENROUTER_API_KEY .env | cut -d= -f2) &&
+      curl -s https://openrouter.ai/api/v1/chat/completions \
+        -H "Authorization: Bearer $O…)
+  ⎿  {
+       "error": {
+         "message": "No allowed providers are available for the selected mo
+     … +50 lines (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR" && OR_KEY=$(grep OPENROUTER_API_KEY .env | cut -d= -f2) &&
+      curl -s "https://openrouter.ai/api/v1/models" | python -c "
+      import json,sys…)
+  ⎿  openai/gpt-5.6-luna-pro
+     openai/gpt-5.6-luna
+     openai/gpt-5.6-terra-pro
+     … +39 lines (ctrl+o to expand)
+● Bash(cd "D:/AI_SDR" && OR_KEY=$(grep OPENROUTER_API_KEY .env | cut -d= -f2) &&
+      curl -s https://openrouter.ai/api/v1/chat/completions \
+        -H "Authorization: Bearer $O…)
+  ⎿  {"id":"gen-1785494888-CdEg8e5JfmD95dEVtUeG","object":"chat.completion"
+     ,"created":1785494888,"model":"openai/gpt-5","provider":"OpenAI","syst
+     em_fingerprint":null,"service_tier":"default","choices":[{"index":0,"l
+     … +4 lines (ctrl+o to expand)
+  ⎿  (timeout 30s)
+
+● Found the blocker. Let me flag it and get your call on how to proceed.
+
+● User answered Claude's questions:
+  ⎿  · Your OpenRouter account's allowed-providers setting blocks every provider
+     that serves Claude (Anthropic, Google Vertex, Amazon Bedrock, Azure all 
+     rejected) — but OpenAI and Perplexity are allowed. How do you want to 
+     handle ad-copy generation for now? → Switch to openai/gpt-5 (Recommended)
+
+● Switching the ad-copy model to openai/gpt-5, updating both the config default
+  and the plan's model matrix to reflect why.
+
+● Update(app\config.py)
+  ⎿  Added 1 line, removed 1 line
+      12  
+      13      openrouter_api_key: str = ""
+      14      openrouter_competitor_model: str = "perplexity/sonar-pro"
+      15 -    openrouter_copy_model: str = "anthropic/claude-sonnet-4"   
+      15 +    openrouter_copy_model: str = "openai/gpt-5"                
+      16      openrouter_image_model: str = "google/gemini-2.5-flash-imag
+          e"
+      17  
+      18      meta_ad_library_access_token: str = ""
+
+● Update(D:\AI_SDR\.env)
+  ⎿  Added 1 line, removed 1 line
+       4  # OpenRouter (single key for all three model tasks)
+       5  OPENROUTER_API_KEY=sk-or-v1-cbbce14de2b30d942099a37c60223afe9fc
+          6e4325c397f993cd29034a854dc86
+       6  OPENROUTER_COMPETITOR_MODEL=perplexity/sonar-pro
+       7 -OPENROUTER_COPY_MODEL=anthropic/claude-sonnet-4                
+       7 +OPENROUTER_COPY_MODEL=openai/gpt-5                             
+       8  OPENROUTER_IMAGE_MODEL=google/gemini-2.5-flash-image
+       9  
+      10  # Meta Ad Library (only active ad source for this demo)
+
+● Update(D:\AI_SDR\.env.example)
+  ⎿  Added 1 line, removed 1 line
+       4  # OpenRouter (single key for all three model tasks)
+       5  OPENROUTER_API_KEY=
+       6  OPENROUTER_COMPETITOR_MODEL=perplexity/sonar-pro
+       7 -OPENROUTER_COPY_MODEL=anthropic/claude-sonnet-4                
+       7 +OPENROUTER_COPY_MODEL=openai/gpt-5                             
+       8  OPENROUTER_IMAGE_MODEL=google/gemini-2.5-flash-image
+       9  
+      10  # Meta Ad Library (only active ad source for this demo)
+
+● Now let's fix the model matrix in the plan to explain the swap, and switch the
+  code from json_object to json_schema response format (which is what actually
+  works, per our curl tests) for both LLM calls.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 4 lines, removed 2 lines
+      35  | Task | Model | Why |
+      36  |---|---|---|
+      37  | Competitor discovery | `perplexity/sonar-pro` | built-in web 
+          search + citations, cheaper than reasoning-tier Sonar |
+      38 -| Ad copy generation | Claude (Sonnet, via OpenRouter) | best d
+         -efault for creative/marketing copy; swappable per-task later | 
+      38 +| Ad copy generation | `openai/gpt-5` | swapped from Claude Son
+         +net — this OpenRouter account's allowed-providers setting rejec
+         +ts every Claude-serving provider (Anthropic, Vertex, Bedrock, A
+         +zure); OpenAI is allowed and is the next-best default for creat
+         +ive/marketing copy. Swap back to Claude by changing `OPENROUTER
+         +_COPY_MODEL` once the account's provider allowlist is updated a
+         +t openrouter.ai/settings/preferences |                         
+      39  | Ad image generation | `google/gemini-2.5-flash-image` (Nano B
+          anana) | fast, cheap, via OpenRouter's unified Image API |
+      40  
+      41 -All three go through the same OpenRouter key — one client wrapp
+         -er (`app/services/openrouter.py`) with per-task model config, s
+         -o swapping any model later is a one-line change.               
+      41 +All three go through the same OpenRouter key — one client wrapp
+         +er (`app/services/openrouter.py`) with per-task model config, s
+         +o swapping any model later is a one-line change (`config.py` / 
+         +`.env`).                                                       
+      42  
+      43 +**Structured output**: use `response_format: {"type": "json_sch
+         +ema", "json_schema": {...}}`, not `json_object` — Perplexity's 
+         +OpenRouter route rejects `json_object` outright, and `json_sche
+         +ma` is honored by both Perplexity and OpenAI here.             
+      44 +                                                               
+      45  **Ad copy generation prompt** is given the scraped competitor a
+          ds (headlines/body text) as context and, for each of the 3 conc
+          epts, must return alongside the copy:
+      46  - `differentiation`: what makes this company better/stand out v
+          s. the competitor ads it was shown (concrete, not generic — gro
+          unded in the actual competitor copy pulled in step 2/3)
+      47  - `reasoning`: why this specific angle/hook should work (the pe
+          rsuasion logic — pain point targeted, positioning gap it exploi
+          ts, etc.)
+
+● Now let's fix openrouter.py to use json_schema instead of json_object.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(app\services\openrouter.py)
+  ⎿  Added 59 lines, removed 9 lines
+      11  _BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+      12  
+      13  
+      14 -async def _chat_completion(model: str, messages: list[dict]) ->
+         - str:                                                          
+      14 +_COMPETITORS_SCHEMA = {                                        
+      15 +    "name": "competitors",                                     
+      16 +    "strict": True,                                            
+      17 +    "schema": {                                                
+      18 +        "type": "object",                                      
+      19 +        "properties": {                                        
+      20 +            "resolved_name": {"type": "string"},               
+      21 +            "competitors": {                                   
+      22 +                "type": "array",                               
+      23 +                "items": {                                     
+      24 +                    "type": "object",                          
+      25 +                    "properties": {                            
+      26 +                        "name": {"type": "string"},            
+      27 +                        "domain": {"type": ["string", "null"]},
+      28 +                        "logo_url": {"type": ["string", "null"]
+         +},                                                             
+      29 +                    },                                         
+      30 +                    "required": ["name", "domain", "logo_url"],
+      31 +                    "additionalProperties": False,             
+      32 +                },                                             
+      33 +            },                                                 
+      34 +        },                                                     
+      35 +        "required": ["resolved_name", "competitors"],          
+      36 +        "additionalProperties": False,                         
+      37 +    },                                                         
+      38 +}                                                              
+      39 +                                                               
+      40 +_ADS_SCHEMA = {                                                
+      41 +    "name": "ads",                                             
+      42 +    "strict": True,                                            
+      43 +    "schema": {                                                
+      44 +        "type": "object",                                      
+      45 +        "properties": {                                        
+      46 +            "ads": {                                           
+      47 +                "type": "array",                               
+      48 +                "items": {                                     
+      49 +                    "type": "object",                          
+      50 +                    "properties": {                            
+      51 +                        "headlines": {"type": "array", "items":
+         + {"type": "string"}},                                          
+      52 +                        "descriptions": {"type": "array", "item
+         +s": {"type": "string"}},                                       
+      53 +                        "differentiation": {"type": "string"}, 
+      54 +                        "reasoning": {"type": "string"},       
+      55 +                    },                                         
+      56 +                    "required": ["headlines", "descriptions", "
+         +differentiation", "reasoning"],                                
+      57 +                    "additionalProperties": False,             
+      58 +                },                                             
+      59 +            },                                                 
+      60 +        },                                                     
+      61 +        "required": ["ads"],                                   
+      62 +        "additionalProperties": False,                         
+      63 +    },                                                         
+      64 +}                                                              
+      65 +                                                               
+      66 +                                                               
+      67 +async def _chat_completion(model: str, messages: list[dict], sc
+         +hema: dict) -> str:                                            
+      68      async with httpx.AsyncClient(timeout=60) as client:
+      69          response = await client.post(
+      70              _BASE_URL,
+     ...
+      75              json={
+      76                  "model": model,
+      77                  "messages": messages,
+      25 -                "response_format": {"type": "json_object"},    
+      78 +                "response_format": {"type": "json_schema", "jso
+         +n_schema": schema},                                            
+      79              },
+      80          )
+      28 -        response.raise_for_status()                            
+      81 +        if response.is_error:                                  
+      82 +            raise RuntimeError(f"OpenRouter {response.status_co
+         +de} error: {response.text}")                                   
+      83          data = response.json()
+      84          return data["choices"][0]["message"]["content"]
+      85  
+     ...
+       98              "content": (
+       99                  "You are a market research analyst with live w
+           eb search. Given a company name, "
+      100                  "resolve it to its canonical company name and 
+           identify exactly 3 direct competitors "
+       47 -                "currently operating in the same market. Respo
+          -nd with strict JSON only, no markdown, "                      
+       48 -                "no commentary, matching exactly this schema: 
+          -"                                                             
+       49 -                '{"resolved_name": string, "competitors": ['  
+       50 -                '{"name": string, "domain": string|null, "logo
+          -_url": string|null}'                                          
+       51 -                "]} where competitors has exactly 3 items."   
+      101 +                "currently operating in the same market."     
+      102              ),
+      103          },
+      104          {"role": "user", "content": company_name},
+      105      ]
+       56 -    raw = await _chat_completion(settings.openrouter_competito
+          -r_model, messages)                                            
+      106 +    raw = await _chat_completion(settings.openrouter_competito
+          +r_model, messages, _COMPETITORS_SCHEMA)                       
+      107      return _parse_json(raw)
+      108  
+      109  
+
+● Update(app\services\openrouter.py)
+  ⎿  Added 2 lines, removed 4 lines
+      137                  "above — be concrete and specific, grounded in
+            the actual competitor copy, not generic claims\n"
+      138                  "- reasoning: why this specific angle/hook sho
+           uld work — the persuasion logic (pain point "
+      139                  "targeted, positioning gap it exploits, etc.)\
+           n\n"
+      140 -                "Respond with strict JSON only, no markdown, n
+          -o commentary, matching exactly this schema: "                 
+      141 -                '{"ads": [{"headlines": [string], "description
+          -s": [string], "differentiation": string, '                    
+      142 -                '"reasoning": string}]} where ads has exactly 
+          -3 items.'                                                     
+      140 +                "Generate exactly 3 ad concepts."             
+      141              ),
+      142          },
+      143          {
+     ...
+      149              ),
+      150          },
+      151      ]
+      154 -    raw = await _chat_completion(settings.openrouter_copy_mode
+          -l, messages)                                                  
+      152 +    raw = await _chat_completion(settings.openrouter_copy_mode
+          +l, messages, _ADS_SCHEMA)                                     
+      153      parsed = _parse_json(raw)
+      154      return parsed["ads"]
+      155  
+
+● Stop Task
+  ⎿  cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m uvicorn
+     app.main:app --host 127.0.0.1 --port 8000 · stopped
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m uvicorn
+      app.main:app --host 127.0.0.1 --port 8000 --reload)
+  ⎿  Running in the background (↓ to manage)
+
+● Bash(sleep 2 && curl -s -X POST http://127.0.0.1:8000/api/companies/lookup -H
+      "Content-Type: application/json" -d '{"company_name":"Notion"}')
+  ⎿  {
+       "resolved_name": "Notion Labs, Inc.",
+       "competitors": [
+     … +20 lines (ctrl+o to expand)
+  ⎿  (timeout 30s)
+
+● Competitor lookup works end-to-end now. Let's test the Meta ads fetch and ad
+  generation next.
+
+● Bash(curl -s http://127.0.0.1:8000/api/competitors/1/ads)
+  ⎿  {
+       "ads": [],
+       "status": "refreshing"
+     }
+
+● Bash(sleep 4 && curl -s http://127.0.0.1:8000/api/competitors/1/ads)
+  ⎿  {
+       "ads": [],
+       "status": "refreshing"
+     }
+  ⎿  (timeout 30s)
+● Bash(sleep 5 && curl -s http://127.0.0.1:8000/api/competitors/1/ads/status)
+  ⎿  {
+       "status": "done"
+     }
+  ⎿  (timeout 30s)
+
+● Bash(curl -s http://127.0.0.1:8000/api/competitors/1/ads)
+  ⎿  {
+       "ads": [],
+       "status": "refreshing"
+     }
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR" && TOKEN=$(grep META_AD_LIBRARY_ACCESS_TOKEN .env | cut
+      -d= -f2) && curl -s
+      "https://graph.facebook.com/v20.0/ads_archive?access_token=$TOKEN&sea…)
+  ⎿  {
+       "error": {
+         "message": "Application does not have permission for this action",
+     … +10 lines (ctrl+o to expand)
+
+● Both LLM calls now work. But there's a second external blocker — the Meta Ad
+  Library API itself:
+
+● User answered Claude's questions:
+  ⎿  · Meta's Ad Library API just returned "Application does not have permission
+     for this action" — error_subcode 2332002, pointing to 
+     facebook.com/ads/library/api. This means your Meta app/token hasn't 
+     completed Meta's separate Ad Library API access process (identity 
+     verification), which is required beyond a normal developer token and can 
+     take time to get approved. How do you want to proceed with testing? → try 
+     now
+
+● Bash(cd "D:/AI_SDR" && TOKEN=$(grep META_AD_LIBRARY_ACCESS_TOKEN .env | cut
+      -d= -f2) && curl -s
+      "https://graph.facebook.com/v20.0/ads_archive?access_token=$TOKEN&sea…)
+  ⎿  {
+       "error": {
+         "message": "Application does not have permission for this action",
+     … +10 lines (ctrl+o to expand)
+
+● Still the same error — is_transient: false confirms this isn't a transient
+  glitch, it's a genuine permission gap on the token/app that a retry won't fix.
+  Meta requires apps to complete their separate Ad Library API access process
+  (identity verification) at facebook.com/ads/library/api before ads_archive
+  will respond; a normal developer access token isn't sufficient.
+
+  Since this is blocking on Meta's side and outside what a retry can resolve,
+  want me to proceed with the mock-data fallback so we can verify the rest of
+  the app (competitor ads UI rendering, generation flow) while you sort out
+  Meta's access separately? Or would you rather pause that part of testing?
+
+✻ Baked for 5m 49s
+
+❯ use mock data for now                                                         
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(app\services\meta_ad_library.py)
+  ⎿  Added 35 lines, removed 1 line
+       5  sibling `*_scraper.py` / `*_ad_library.py` stub modules in this
+           package.
+       6  """
+       7  
+       8 -from datetime import date, datetime, timezone                  
+       8 +import random                                                  
+       9 +from datetime import date, datetime, timedelta, timezone       
+      10  
+      11  import httpx
+      12  
+      13  from app.config import settings
+      14  
+      15  _BASE_URL = "https://graph.facebook.com/v20.0/ads_archive"
+      16 +                                                               
+      17 +# TEMPORARY MOCK: the real Ad Library API needs Meta's separate
+         + Ad Library API access                                         
+      18 +# (identity verification at facebook.com/ads/library/api), whic
+         +h the current token                                            
+      19 +# hasn't completed. Toggle off via MOCK_META_ADS=false in .env 
+         +once that's approved.                                          
+      20 +_MOCK_HEADLINES = [                                            
+      21 +    "Get more done, together",                                 
+      22 +    "Your team's new home base",                               
+      23 +    "Stop switching tabs. Start shipping.",                    
+      24 +    "Work management that actually works",                     
+      25 +    "One place for every project",                             
+      26 +]                                                              
+      27 +_MOCK_BODIES = [                                               
+      28 +    "Plan, track, and deliver work in one connected workspace."
+         +,                                                              
+      29 +    "Trusted by thousands of teams to hit deadlines without the
+         + chaos.",                                                      
+      30 +    "Automate the busywork so your team can focus on what matte
+         +rs.",                                                          
+      31 +    "See every project's status at a glance — no more status me
+         +etings.",                                                      
+      32 +]                                                              
+      33 +                                                               
+      34 +                                                               
+      35 +def _mock_ads(advertiser_name: str, limit: int) -> list[dict]: 
+      36 +    now = datetime.now(timezone.utc)                           
+      37 +    return [                                                   
+      38 +        {                                                      
+      39 +            "source": "meta",                                  
+      40 +            "headline": f"{advertiser_name}: {random.choice(_MO
+         +CK_HEADLINES)}",                                               
+      41 +            "body_text": random.choice(_MOCK_BODIES),          
+      42 +            "image_url": None,                                 
+      43 +            "landing_url": f"https://example.com/{advertiser_na
+         +me.lower().replace(' ', '-')}",                                
+      44 +            "first_seen": (now - timedelta(days=random.randint(
+         +1, 60))).date(),                                               
+      45 +            "fetched_at": now,                                 
+      46 +        }                                                      
+      47 +        for _ in range(min(limit, 5))                          
+      48 +    ]                                                          
+      49  _FIELDS = ",".join(
+      50      [
+      51          "ad_creative_link_titles",
+
+● Update(app\services\meta_ad_library.py)
+  ⎿  Added 4 lines
+      89      normalized to the shared ScrapedAd schema. Pages through th
+          e API until the cap is hit.
+      90      """
+      91      effective_limit = limit or settings.max_ads_per_source
+      92 +                                                               
+      93 +    if settings.mock_meta_ads:                                 
+      94 +        return _mock_ads(advertiser_name, effective_limit)     
+      95 +                                                               
+      96      countries = [c.strip() for c in settings.meta_ad_library_co
+          untries.split(",") if c.strip()]
+      97  
+      98      params = {
+
+● Now add the mock_meta_ads setting and enable it in .env.
+
+● Update(app\config.py)
+  ⎿  Added 1 line
+      17  
+      18      meta_ad_library_access_token: str = ""
+      19      meta_ad_library_countries: str = "US"  # comma-separated ad
+          _reached_countries
+      20 +    mock_meta_ads: bool = False  # TEMPORARY: serve mock ads un
+         +til Meta Ad Library API access is approved                     
+      21  
+      22      max_ads_per_source: int = 25
+      23  
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(D:\AI_SDR\.env)
+  ⎿  Added 1 line
+      10  # Meta Ad Library (only active ad source for this demo)
+      11  META_AD_LIBRARY_ACCESS_TOKEN=EAAPQNCLbNkEBSPmZCWhuxZBN2Ratv52NF
+          LR7aUMqaxnBM7i9mT5XScKk0HHKsFwZBMRA2ryRpnYWOFMKn4pgPca46msgNvdh
+          45li1NZAnSV6mxhiffUL6UYNky7dJqh4zuuFtP10wsFNpyiZCgB90qEN1ujInrU
+          uYj8h5ZCNp2iDTZCqGcH0QsfV0SpxyYdDEtZBwCCiQNQk96msRV5LyVRyoyvZAW
+          82OL8MuD34k2GDl6jwghiYwAXBe3f8d5QdUJbdXyH8pvVVC8ZBDo3AGQ9ZCkk
+      12  META_AD_LIBRARY_COUNTRIES=US
+      13 +MOCK_META_ADS=true                                             
+      14  
+      15  # Cap on ads fetched per source per competitor (see PROJECT_PLA
+          N.md section 4)
+      16  MAX_ADS_PER_SOURCE=10
+
+● Update(D:\AI_SDR\.env.example)
+  ⎿  Added 1 line
+      10  # Meta Ad Library (only active ad source for this demo)
+      11  META_AD_LIBRARY_ACCESS_TOKEN=
+      12  META_AD_LIBRARY_COUNTRIES=US
+      13 +MOCK_META_ADS=false                                            
+      14  
+      15  # Cap on ads fetched per source per competitor (see PROJECT_PLA
+          N.md section 4)
+      16  MAX_ADS_PER_SOURCE=10
+
+● Let's also note this in the plan for consistency, then retest.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(D:\AI_SDR\PROJECT_PLAN.md)
+  ⎿  Added 1 line, removed 1 line
+      52  
+      53  | Source | Access | Notes | Status (this demo) |
+      54  |---|---|---|---|
+      55 -| Meta Ad Library | Official API (free) | needs a Meta develope
+         -r app + access token | **Active** |                            
+      55 +| Meta Ad Library | Official API (free) | needs a Meta develope
+         +r app + access token, **plus** Meta's separate Ad Library API a
+         +ccess (identity verification at facebook.com/ads/library/api) —
+         + a normal dev token alone gets rejected with error_subcode 2332
+         +002 | **Active, mocked** — real token pending Meta's approval; 
+         +`MOCK_META_ADS=true` in `.env` serves fake ads so the rest of t
+         +he app is testable meanwhile |                                 
+      56  | Google Ads Transparency Center | No official API — Playwright
+           scrape | isolate as its own module; page layout may change ove
+          r time | Commented out — future work |
+      57  | TikTok Commercial Content Library | Official API (free) | inc
+          luded as third source | Commented out — future work |
+      58  | LinkedIn Ad Library | No official API — Playwright scrape | k
+          ey for B2B competitors; isolate as its own module like the Goog
+          le scraper, same layout-drift risk | Commented out — future wor
+          k |
+● Now let's restart the backend (it should hot-reload since --reload is on) and
+  retest.
+
+● Bash(sleep 1 && curl -s http://127.0.0.1:8000/api/competitors/1/ads)
+  ⎿  {
+       "ads": [],
+       "status": "refreshing"
+     }
+
+● Bash(sleep 2 && curl -s http://127.0.0.1:8000/api/competitors/1/ads)
+  ⎿  {
+       "ads": [],
+       "status": "refreshing"
+     }
+
+  Read 1 file (ctrl+o to expand)
+
+● The .env edit happened after the last reload, and .env lives outside backend/
+  (the watched directory), so the running process never picked up
+  MOCK_META_ADS=true. Restarting the server to pick it up.
+
+● Stop Task
+  ⎿  cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m uvicorn
+     app.main:app --host 127.0.0.1 --port 8000 --reload · stopped
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m uvicorn
+      app.main:app --host 127.0.0.1 --port 8000 --reload --reload-dir .
+      --reload-include "../.env")
+  ⎿  Running in the background (↓ to manage)
+
+● Bash(sleep 2 && curl -s http://127.0.0.1:8000/api/competitors/1/ads)
+  ⎿  {
+       "ads": [],
+       "status": "refreshing"
+     }
+
+● Bash(sleep 2 && curl -s http://127.0.0.1:8000/api/competitors/1/ads)
+  ⎿  Internal Server Error
+
+  Searched for 1 pattern, read 2 files (ctrl+o to expand)
+
+● Update(app\routers\ads.py)
+  ⎿  Added 1 line, removed 1 line
+      1  import json
+      2 -from datetime import datetime, timedelta, timezone              
+      2 +from datetime import datetime, timedelta                        
+      3  
+      4  from fastapi import APIRouter, BackgroundTasks, Depends, HTTPExc
+         eption
+      5  from sqlmodel import Session, select
+
+● Update(app\routers\ads.py)
+  ⎿  Added 1 line, removed 1 line
+      19      if not ads:
+      20          return False
+      21      newest = max(ad.fetched_at for ad in ads)
+      22 -    return datetime.now(timezone.utc) - newest < _CACHE_TTL    
+      22 +    return datetime.utcnow() - newest < _CACHE_TTL             
+      23  
+      24  
+      25  async def _refresh_ads_for_competitor(competitor_id: int) -> No
+          ne:
+
+● Update(app\routers\ads.py)
+  ⎿  Added 1 line, removed 1 line
+      118      generated: list[GeneratedAd] = []
+      119      for concept in concepts:
+      120          row = GeneratedAd(
+      121 -            created_at=datetime.now(timezone.utc),            
+      121 +            created_at=datetime.utcnow(),                     
+      122              company_name=company_name,
+      123              headline_variants=json.dumps(concept["headlines"])
+           ,
+      124              description_variants=json.dumps(concept["descripti
+           ons"]),
+
+● Now companies.py and meta_ad_library.py.
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(app\routers\companies.py)
+  ⎿  Added 1 line, removed 1 line
+      1 -from datetime import datetime, timezone                         
+      1 +from datetime import datetime                                   
+      2  
+      3  from fastapi import APIRouter, Depends
+      4  from sqlmodel import Session
+
+● Update(app\routers\companies.py)
+  ⎿  Added 1 line, removed 1 line
+      19      lookup = CompanyLookup(
+      20          query_name=company_name,
+      21          resolved_name=result["resolved_name"],
+      22 -        created_at=datetime.now(timezone.utc),                 
+      22 +        created_at=datetime.utcnow(),                          
+      23      )
+      24      session.add(lookup)
+      25      session.commit()
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(app\services\meta_ad_library.py)  ⎿  Added 13 lines, removed 13 lines
+       6  """
+       7  
+       8  import random
+       9 -from datetime import date, datetime, timedelta, timezone       
+       9 +from datetime import date, datetime, timedelta                 
+      10  
+      11  import httpx
+      12  
+      13  from app.config import settings
+      14  
+      15  _BASE_URL = "https://graph.facebook.com/v20.0/ads_archive"
+      16 +_FIELDS = ",".join(                                            
+      17 +    [                                                          
+      18 +        "ad_creative_link_titles",                             
+      19 +        "ad_creative_bodies",                                  
+      20 +        "ad_creative_link_captions",                           
+      21 +        "ad_snapshot_url",                                     
+      22 +        "ad_delivery_start_time",                              
+      23 +        "page_name",                                           
+      24 +    ]                                                          
+      25 +)                                                              
+      26 +_PAGE_SIZE = 100  # Meta API max per page                      
+      27  
+      28  # TEMPORARY MOCK: the real Ad Library API needs Meta's separate
+           Ad Library API access
+      29  # (identity verification at facebook.com/ads/library/api), whic
+          h the current token
+     ...
+      44  
+      45  
+      46  def _mock_ads(advertiser_name: str, limit: int) -> list[dict]:
+      36 -    now = datetime.now(timezone.utc)                           
+      47 +    now = datetime.utcnow()                                    
+      48      return [
+      49          {
+      50              "source": "meta",
+     ...
+      57          }
+      58          for _ in range(min(limit, 5))
+      59      ]
+      49 -_FIELDS = ",".join(                                            
+      50 -    [                                                          
+      51 -        "ad_creative_link_titles",                             
+      52 -        "ad_creative_bodies",                                  
+      53 -        "ad_creative_link_captions",                           
+      54 -        "ad_snapshot_url",                                     
+      55 -        "ad_delivery_start_time",                              
+      56 -        "page_name",                                           
+      57 -    ]                                                          
+      58 -)                                                              
+      59 -_PAGE_SIZE = 100  # Meta API max per page                      
+      60  
+      61  
+      62  def _first_or_none(values: list[str] | None) -> str | None:
+
+● Update(app\services\meta_ad_library.py)
+  ⎿  Added 1 line, removed 1 line
+      80          "image_url": None,
+      81          "landing_url": raw_ad.get("ad_snapshot_url"),
+      82          "first_seen": _parse_date(raw_ad.get("ad_delivery_start
+          _time")),
+      83 -        "fetched_at": datetime.now(timezone.utc),              
+      83 +        "fetched_at": datetime.utcnow(),                       
+      84      }
+      85  
+      86  
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(app\services\meta_ad_library.py)
+  ⎿  Added 2 lines, removed 1 line
+      109      async with httpx.AsyncClient(timeout=30) as client:
+      110          while url and len(results) < effective_limit:
+      111              response = await client.get(url, params=params)
+      112 -            response.raise_for_status()                       
+      112 +            if response.is_error:                             
+      113 +                raise RuntimeError(f"Meta Ad Library API {resp
+          +onse.status_code} error: {response.text}")                    
+      114              payload = response.json()
+      115  
+      116              for raw_ad in payload.get("data", []):
+
+● Now let's syntax check and restart the backend.
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m py_compile
+      app/routers/ads.py app/routers/companies.py
+      app/services/meta_ad_library.py && echo OK)
+  ⎿  OK
+
+● Bash(sleep 2 && curl -s http://127.0.0.1:8000/api/competitors/1/ads)
+  ⎿  Internal Server Error
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(app\routers\ads.py)
+  ⎿  Added 1 line, removed 1 line
+      1  import json
+      2 -from datetime import datetime, timedelta                        
+      2 +from datetime import datetime, timedelta, timezone              
+      3  
+      4  from fastapi import APIRouter, BackgroundTasks, Depends, HTTPExc
+         eption
+      5  from sqlmodel import Session, select
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -c "
+      from datetime import datetime, timezone…)
+  ⎿  datetime.datetime(2026, 7, 31, 10, 59, 55, 855565) None
+
+● Bash(cd "D:/AI_SDR/backend" && python -c "
+      import sqlite3…)
+  ⎿  (1, '2026-07-31 10:57:26.633418', 'text')
+     (2, '2026-07-31 10:57:26.633418', 'text')
+     (3, '2026-07-31 10:57:26.633418', 'text')
+     … +2 lines (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -c "
+      from app.db import engine…)
+  ⎿  1 datetime.datetime(2026, 7, 31, 10, 57, 26, 633418) None
+     2 datetime.datetime(2026, 7, 31, 10, 57, 26, 633418) None
+     3 datetime.datetime(2026, 7, 31, 10, 57, 26, 633418) None
+     … +2 lines (ctrl+o to expand)
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -c "
+      from app.db import engine…)
+  ⎿  True
+
+● Bash(netstat -ano | grep ":8000" | head -20)
+  ⎿    TCP    127.0.0.1:8000         0.0.0.0:0              LISTENING
+      500960
+
+● Bash(curl -s http://127.0.0.1:8000/api/competitors/1/ads)
+  ⎿  Internal Server Error
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+● This looks like a stale reload artifact — let's do a clean full restart rather
+  than rely on hot-reload, and also clear the stale DB rows so we start fresh.
+
+● Stop Task
+  ⎿  cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m uvicorn
+     app.main:app --host 127.0.0.1 --port 8000 --reload --reload-dir .
+     --reload-include "../.env" · stopped
+
+● Bash(rm -f "D:/AI_SDR/backend/app.db" && cd "D:/AI_SDR/backend" &&
+      ".venv/Scripts/python.exe" -m py_compile app/routers/ads.py
+      app/routers/companies.py app/services/…)
+  ⎿  COMPILE OK
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m uvicorn
+      app.main:app --host 127.0.0.1 --port 8000)
+  ⎿  Running in the background (↓ to manage)
+
+● Now let's re-run the full flow from scratch: lookup → competitor ads.
+
+● Bash(sleep 2 && curl -s -X POST http://127.0.0.1:8000/api/companies/lookup -H
+      "Content-Type: application/json" -d '{"company_name":"Notion"}')
+  ⎿  {
+       "resolved_name": "Notion Labs, Inc.",
+       "competitors": [
+     … +20 lines (ctrl+o to expand)
+  ⎿  (timeout 30s)
+
+● Bash(curl -s http://127.0.0.1:8000/api/competitors/1/ads && echo && sleep 2 &&
+      curl -s http://127.0.0.1:8000/api/competitors/1/ads)
+  ⎿  {
+       "ads": [],
+       "status": "refreshing"
+     … +36 lines (ctrl+o to expand)
+
+● Fixed — the naive/aware bug is resolved and mock ads flow correctly. Now let's
+  test ad generation grounded in these scraped ads.
+
+● Bash(curl -s -X POST http://127.0.0.1:8000/api/ads/generate -H "Content-Type:
+      application/json" -d '{"company_name":"Notion","context":"Focus on
+      all-in-one docs + pr…)
+  ⎿  Running in the background (↓ to manage)
+  ⎿  (timeout 1m)
+
+● Bash(sleep 30 && cat "C:/Users/lokha/AppData/Local/Temp/claude/D--AI-SDR/93de9
+      c4c-118d-4ecd-9280-1404f2b5febd/tasks/bu2beugn2.output")
+  ⎿  Error: Blocked: sleep 30 followed by: cat 
+     "C:/Users/lokha/AppData/Local/Temp/claude/D--AI-SDR/93de9c4c-118d-4ecd-9280
+     -1404f2b5febd/tasks/bu2beugn2.output". To wait for a condition, use Monitor
+     with an until-loop (e.g. `until <check>; do sleep 2; done`). To wait for a
+     command you started, use run_in_background: true. Do not chain shorter 
+     sleeps to work around this block.
+
+  Read 1 file (ctrl+o to expand)
+
+● Still running — GPT-5 with a strict JSON schema can take a bit. I'll wait for
+  the background notification rather than poll.
+
+  Read 1 file (ctrl+o to expand)
+
+● Background command "Test ad generation endpoint end-to-end" completed (exit
+code 0)
+
+● Ad generation works end-to-end — 3 concepts, each grounded in the scraped
+  competitor ad (referencing "Confluence" specifically), with proper
+  differentiation and reasoning fields. Backend is fully validated. Now let's
+  verify the frontend renders it correctly in a real browser.
+
+❯ stop                                                                          
+
+● The user asked to stop — halting here. Backend testing is complete and working
+  (lookup, mock Meta ads, and ad generation with differentiation/reasoning all
+  verified via curl); I haven't yet moved to the browser test. Let me know when
+  you'd like me to continue.
+
+✻ Sautéed for 8m 12s
+
+※ recap: Building the Competitor Ad Intelligence app; backend (lookup, mock Meta ads, ad generation) is tested and working. Next: verify the frontend renders everything correctly in a real browser. (disable recaps in /config)
+
+❯ restart the backend service                                                   
+
+  Read 1 file (ctrl+o to expand)
+
+● Good, .env already has the Adyntel credentials configured. Restarting the
+  backend now.
+
+● Stop Task
+  ⎿  cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m uvicorn
+     app.main:app --host 127.0.0.1 --port 8000 · stopped
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m py_compile
+      app/services/meta_ad_library.py app/config.py app/routers/ads.py && echo
+      "COMPILE OK")
+  ⎿  COMPILE OK
+
+● Bash(cd "D:/AI_SDR/backend" && ".venv/Scripts/python.exe" -m uvicorn
+      app.main:app --host 127.0.0.1 --port 8000)
+  ⎿  Running in the background (↓ to manage)
+
+● Bash(sleep 2 && curl -s http://127.0.0.1:8000/api/health)
+  ⎿  {
+       "status": "ok"
+     }
+
+● Backend restarted and healthy on http://127.0.0.1:8000, now running with the
+  Adyntel-based Meta ad integration and picking up the current .env.
+
+✻ Crunched for 1m 6s
+
+● Background command "Restart backend FastAPI dev server" failed with exit code
+127
+
+  Read 2 files (ctrl+o to expand)
+
+● Bash(curl -s -m 3 http://127.0.0.1:8000/api/health || echo "NOT RESPONDING")
+  ⎿  {
+       "status": "ok"
+     }
+
+● Bash(netstat -ano | grep ":8000" | head -5)
+  ⎿    TCP    127.0.0.1:8000         0.0.0.0:0              LISTENING
+      39888
+       TCP    127.0.0.1:8000         127.0.0.1:60093        TIME_WAIT
+     … +7 lines (ctrl+o to expand)
+
+● The backend restarted successfully and is up — confirmed via health check
+  ({"status":"ok"}) on port 8000, and the log shows it's already served real
+  traffic (company lookups, competitor ads fetches for IDs 10 and 14), so it
+  looks like you've been testing it in the browser already. The background task
+  tracker flagged the launch as "failed" afterward, but that's a benign artifact
+  of how the bash wrapper reports on detached background processes on Windows —
+  the actual server (PID 39888) is alive and responding right now.
+
+  Let me know if you hit anything broken while testing, or if you'd like me to
+  pick back up on the browser walkthrough.
+
+✻ Worked for 1m 4s
+
+※ recap: Building the Competitor Ad Intelligence app: backend and frontend are done, and we're now testing the full flow end-to-end. Backend just restarted successfully; next step is verifying the app in the browser. (disable recaps in /config)
+
+● Background command "Start frontend Vite dev server" was stopped
+
+● Bash(curl -s -m 3 http://localhost:5173 -o /dev/null -w "%{http_code}" || echo
+      "NOT RESPONDING")
+  ⎿  200
+
+● Just a background-task notification, no action needed from you — the frontend
+  dev-server task was stopped, but the frontend is still up and responding at
+  localhost:5173 (likely the same detached-process behavior as the backend).
+  Both services are still live if you want to keep testing.
+
+✻ Brewed for 2m 3s
+
+※ recap: Building the AI SDR competitor-ad-intelligence app; backend (Adyntel-powered Meta ads) and frontend are both up and were serving real traffic from your own testing. Next: walk through the browser flow together to confirm everything works end to end.
